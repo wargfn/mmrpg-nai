@@ -761,9 +761,11 @@ def pdf_list(data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DAT
     if not materials:
         console.print("[yellow]No source materials found.[/yellow]")
         return
-    table = Table("ID", "Title", "Pages", "Categories")
+    table = Table("ID", "Title", "Pages", "Chars", "Categories")
     for m in materials:
-        table.add_row(m.id[:8], m.title, str(m.page_count), ", ".join(m.categories))
+        txt = Path(m.extracted_text_path)
+        char_count = f"{txt.stat().st_size:,}" if m.extracted_text_path and txt.exists() else "—"
+        table.add_row(m.id[:8], m.title, str(m.page_count), char_count, ", ".join(m.categories))
     console.print(table)
 
 
