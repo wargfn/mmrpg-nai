@@ -157,6 +157,7 @@ class Campaign(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     description: str = ""
+    plan: str = Field(default="", description="AI-generated campaign plan (from 'campaign plan')")
     settings: CampaignSettings = Field(default_factory=CampaignSettings)
     session_ids: list[str] = Field(default_factory=list)
     character_ids: list[str] = Field(default_factory=list)

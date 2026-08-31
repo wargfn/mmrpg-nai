@@ -155,9 +155,16 @@ mmrpg-nai campaign create
 
 #### `campaign plan <campaign-id>`
 Use the AI to draft a full campaign plan (hooks, NPCs, locations, progression).
+The plan is **saved to the campaign record** and can be viewed any time with `campaign show`.
 ```bash
 mmrpg-nai campaign plan <campaign-id>
 # --brief "A Hydra sleeper agent has infiltrated the X-Men"
+```
+
+#### `campaign show <campaign-id>`
+Display full campaign details and the saved AI plan.
+```bash
+mmrpg-nai campaign show <campaign-id>
 ```
 
 #### `campaign add-source <campaign-id> <source-id>`

@@ -2,6 +2,7 @@
 
 import pytest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from mmrpg_nai.models.core import Campaign, Character, Equipment, EquipmentType, NarratorConfig, PowerSet, Session
 from mmrpg_nai.storage.store import Store
@@ -247,3 +248,64 @@ def test_campaign_add_source_with_prefix(store: Store):
 
     reloaded = store.campaigns.load(campaign.id)
     assert mat.id in reloaded.source_material_ids
+
+
+def test_campaign_plan_saved_to_campaign(store: Store):
+    from typer.testing import CliRunner
+    from unittest.mock import patch
+    from mmrpg_nai.cli.main import app
+
+    campaign = Campaign(name="Plan Save Test")
+    store.campaigns.save(campaign)
+
+    runner = CliRunner()
+    mock_client = MagicMock()
+    mock_client.complete.return_value = "# My Plan\nThis is the plan."
+    with patch("mmrpg_nai.llm.client._build_client", return_value=MagicMock()), \
+         patch("mmrpg_nai.llm.narrator.Narrator.plan_campaign", return_value="# My Plan\nThis is the plan."):
+        result = runner.invoke(app, [
+            "campaign", "plan",
+            campaign.id[:8],
+            "--brief", "A test brief",
+            "--data-dir", str(store.base_dir),
+        ])
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert reloaded is not None
+    assert "My Plan" in reloaded.plan
+
+
+def test_campaign_show_displays_plan(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+
+    campaign = Campaign(name="Show Test", plan="# Campaign Plan\nThe heroes fight Doom.")
+    store.campaigns.save(campaign)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "campaign", "show",
+        campaign.id[:8],
+        "--data-dir", str(store.base_dir),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Show Test" in result.output
+    assert "Campaign Plan" in result.output
+
+
+def test_campaign_show_no_plan(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+
+    campaign = Campaign(name="No Plan Yet")
+    store.campaigns.save(campaign)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "campaign", "show",
+        campaign.id,
+        "--data-dir", str(store.base_dir),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "No plan" in result.output

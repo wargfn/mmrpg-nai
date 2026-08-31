@@ -259,7 +259,7 @@ def campaign_plan(
     brief: str = typer.Option(..., prompt=True, help="Brief description of the campaign"),
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
 ) -> None:
-    """Use AI to draft a campaign plan."""
+    """Use AI to draft a campaign plan (saved to the campaign record)."""
     store = _get_store(data_dir)
     cfg = store.load_config()
     campaign = _load_campaign_or_exit(store, campaign_id)
@@ -270,6 +270,54 @@ def campaign_plan(
     console.print("[bold blue]Generating campaign plan…[/bold blue]")
     plan = narrator.plan_campaign(brief)
     console.print(Markdown(plan))
+
+    # Persist the plan into the campaign record
+    campaign.plan = plan
+    store.campaigns.save(campaign)
+    console.print("[dim]Plan saved. View anytime with: mmrpg-nai campaign show " + campaign.id[:8] + "[/dim]")
+
+
+@campaign_app.command("show")
+def campaign_show(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Show full details for a campaign, including the saved AI plan."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+
+    # Header panel
+    source_titles = []
+    for mid in campaign.source_material_ids:
+        m = store.source_materials.load(mid)
+        if m:
+            source_titles.append(m.title)
+
+    enemy_names = []
+    for eid in campaign.enemy_ids:
+        e = store.characters.load(eid)
+        if e:
+            enemy_names.append(e.name)
+
+    info = (
+        f"[bold]Name:[/bold]        {campaign.name}\n"
+        f"[bold]ID:[/bold]          {campaign.id}\n"
+        f"[bold]Description:[/bold] {campaign.description or '—'}\n"
+        f"[bold]Tone:[/bold]        {campaign.settings.tone}\n"
+        f"[bold]Era:[/bold]         {campaign.settings.era}\n"
+        f"[bold]Location:[/bold]    {campaign.settings.location}\n"
+        f"[bold]Sessions:[/bold]    {len(campaign.session_ids)}\n"
+        f"[bold]Source Materials:[/bold] {', '.join(source_titles) or '—'}\n"
+        f"[bold]Enemy Roster:[/bold]    {', '.join(enemy_names) or '—'}\n"
+        f"[bold]Created:[/bold]     {campaign.created_at.strftime('%Y-%m-%d')}"
+    )
+    console.print(Panel(info, title=f"📖 {campaign.name}", expand=False))
+
+    if campaign.plan:
+        console.print("\n[bold yellow]Campaign Plan[/bold yellow]")
+        console.print(Markdown(campaign.plan))
+    else:
+        console.print("\n[dim]No plan generated yet. Run: mmrpg-nai campaign plan " + campaign.id[:8] + "[/dim]")
 
 
 def _load_by_prefix_or_exact(repo: "_Repo", id_: str, label: str) -> "Any":
