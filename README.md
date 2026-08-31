@@ -237,6 +237,15 @@ mmrpg-nai session create
 Start an interactive narration session. Prompts you to pick a campaign and characters,
 then generates an AI recap of the previous session before play begins.
 
+At **session startup**, if the campaign has a plan and/or progress summary, they are
+automatically injected into the Narrator's system prompt so the AI knows exactly where
+the story stands and what comes next.
+
+At **session end** (when you type `quit`/`exit`), if the campaign has a plan, the AI
+automatically generates an updated campaign progress summary — recording which milestones
+have been reached, the current story state, and unresolved threads — and saves it back to
+the campaign. View it any time with `campaign show <id>`.
+
 ```bash
 mmrpg-nai session run
 

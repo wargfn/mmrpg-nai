@@ -228,3 +228,48 @@ def test_max_source_chars_truncates_text(cfg, store, session, campaign, characte
     # Only 100 chars of the 5000-char text should be injected
     injected = system_content.split("### Big Book\n", 1)[1]
     assert len(injected) <= 100
+
+
+# ---------------------------------------------------------------------------
+# Campaign progress tracking tests
+# ---------------------------------------------------------------------------
+
+def test_plan_and_progress_injected_into_system_prompt(cfg, store, session, campaign, character):
+    """Campaign plan and progress should appear in the system message."""
+    campaign.plan = "# The Plan\nDefeat the Foot Clan."
+    campaign.campaign_progress = "Session 1 complete. The Foot was spotted."
+    store.campaigns.save(campaign)
+
+    narrator = _make_narrator(cfg, store, session, campaign, [character])
+    system_content = narrator._messages[0]["content"]
+    assert "Campaign Plan" in system_content
+    assert "Defeat the Foot Clan" in system_content
+    assert "Campaign Progress" in system_content
+    assert "Session 1 complete" in system_content
+
+
+def test_plan_not_injected_when_empty(cfg, store, session, campaign, character):
+    """No plan section should appear if campaign.plan is empty."""
+    campaign.plan = ""
+    campaign.campaign_progress = ""
+    store.campaigns.save(campaign)
+
+    narrator = _make_narrator(cfg, store, session, campaign, [character])
+    system_content = narrator._messages[0]["content"]
+    assert "Campaign Plan" not in system_content
+    assert "Campaign Progress" not in system_content
+
+
+def test_summarise_campaign_progress_calls_llm(cfg, store, session, campaign, character):
+    """summarise_campaign_progress should call the LLM and return its result."""
+    from mmrpg_nai.models.core import LogEntry
+    session.log.append(LogEntry(role="player", content="We fought the Foot soldiers."))
+    session.log.append(LogEntry(role="narrator", content="You defeated them!"))
+    store.sessions.save(session)
+    campaign.plan = "# Plan\nFight the Foot."
+    store.campaigns.save(campaign)
+
+    narrator = _make_narrator(cfg, store, session, campaign, [character])
+    result = narrator.summarise_campaign_progress(campaign, [session])
+    assert result == "LLM response"
+    narrator.llm.complete.assert_called()

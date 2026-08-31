@@ -700,6 +700,20 @@ def session_run(
     store.sessions.save(session)
     console.print("[bold]Session ended. Log saved.[/bold]")
 
+    # ------------------------------------------------------------------
+    # 7. Update campaign progress
+    # ------------------------------------------------------------------
+    if campaign.plan or campaign.campaign_progress:
+        console.print("[dim italic]Updating campaign progress…[/dim italic]")
+        try:
+            completed_sessions = store.sessions.find(campaign_id=campaign.id)
+            progress = narrator.summarise_campaign_progress(campaign, completed_sessions)
+            campaign.campaign_progress = progress
+            store.campaigns.save(campaign)
+            console.print(Panel(Markdown(progress), title="[bold cyan]Campaign Progress[/bold cyan]"))
+        except Exception as exc:
+            console.print(f"[yellow]Could not update campaign progress: {exc}[/yellow]")
+
 
 @session_app.command("log")
 def session_log(

@@ -59,6 +59,17 @@ class Narrator:
             f"Location: {campaign.settings.location}"
         )
 
+        # Campaign plan and progress
+        if campaign.plan:
+            parts.append(f"\n## Campaign Plan\n{campaign.plan}")
+        if campaign.campaign_progress:
+            parts.append(
+                f"\n## Campaign Progress\n"
+                f"The following summarises what has happened so far in this campaign "
+                f"and where the story currently stands against the plan:\n\n"
+                f"{campaign.campaign_progress}"
+            )
+
         # Party
         if party:
             parts.append("\n## Player Characters")
@@ -217,6 +228,56 @@ class Narrator:
                     f"Draft a detailed Marvel Multiverse RPG campaign plan based on this brief:\n\n{brief}\n\n"
                     "Include: title, synopsis, 3-5 adventure hooks, major NPCs, key locations, "
                     "and recommended rank/tier progression."
+                ),
+            },
+        ]
+        return self.llm.complete(messages, stream=False)  # type: ignore[return-value]
+
+    def summarise_campaign_progress(
+        self,
+        campaign: Campaign,
+        completed_sessions: "list[Session]",
+    ) -> str:
+        """Generate an updated campaign-progress summary after a session.
+
+        The summary reflects how far the story has progressed against the plan and
+        what major beats, reveals, and unresolved threads remain.
+        """
+        # Build a condensed transcript of all completed sessions
+        session_summaries: list[str] = []
+        for i, s in enumerate(completed_sessions, 1):
+            lines = [f"### Session {i}: {s.title}"]
+            if s.synopsis:
+                lines.append(s.synopsis)
+            for entry in s.log:
+                if entry.role in ("player", "narrator"):
+                    lines.append(f"{entry.role.capitalize()}: {entry.content}")
+            session_summaries.append("\n".join(lines[-40:]))  # cap per session
+
+        history = "\n\n".join(session_summaries[-5:])  # last 5 sessions max
+
+        plan_section = f"\n\nCampaign Plan:\n{campaign.plan}" if campaign.plan else ""
+        prior_progress = (
+            f"\n\nPrevious progress summary:\n{campaign.campaign_progress}"
+            if campaign.campaign_progress
+            else ""
+        )
+
+        messages = [
+            {"role": "system", "content": self.cfg.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"You are tracking the narrative progress of a Marvel Multiverse RPG campaign "
+                    f"called '{campaign.name}'."
+                    f"{plan_section}"
+                    f"{prior_progress}"
+                    f"\n\nSession history (most recent sessions):\n{history}\n\n"
+                    "Write a concise (5-8 sentences) progress update that:\n"
+                    "1. States which plan milestones have been completed\n"
+                    "2. Describes where the story currently stands\n"
+                    "3. Lists key unresolved threads and upcoming beats\n"
+                    "Write in past tense, factual, suitable as a briefing for the next session's Narrator."
                 ),
             },
         ]
