@@ -6,7 +6,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 from rich.console import Console
@@ -275,12 +275,19 @@ def campaign_plan(
     console.print(Markdown(plan))
 
 
-def _load_campaign_or_exit(store: "Store", campaign_id: str) -> "Campaign":
-    campaign = store.campaigns.load(campaign_id)
-    if campaign is None:
-        console.print(f"[red]Campaign not found: {campaign_id}[/red]")
+def _load_by_prefix_or_exact(repo: "_Repo", id_: str, label: str) -> "Any":
+    """Load by exact ID first; fall back to prefix match. Exit with error if not found."""
+    obj = repo.load(id_)
+    if obj is None:
+        obj = repo.load_by_prefix(id_)
+    if obj is None:
+        console.print(f"[red]{label} not found: {id_}[/red]")
         raise typer.Exit(1)
-    return campaign
+    return obj
+
+
+def _load_campaign_or_exit(store: "Store", campaign_id: str) -> "Campaign":
+    return _load_by_prefix_or_exact(store.campaigns, campaign_id, "Campaign")
 
 
 @campaign_app.command("add-source")
@@ -292,10 +299,8 @@ def campaign_add_source(
     """Link a PDF source material to a campaign."""
     store = _get_store(data_dir)
     campaign = _load_campaign_or_exit(store, campaign_id)
-    material = store.source_materials.load(source_id)
-    if material is None:
-        console.print(f"[red]Source material not found: {source_id}[/red]")
-        raise typer.Exit(1)
+    material = _load_by_prefix_or_exact(store.source_materials, source_id, "Source material")
+    source_id = material.id  # normalise to full ID
     if source_id in campaign.source_material_ids:
         console.print(f"[yellow]{material.title!r} is already linked to this campaign.[/yellow]")
         return
@@ -313,12 +318,15 @@ def campaign_remove_source(
     """Unlink a PDF source material from a campaign."""
     store = _get_store(data_dir)
     campaign = _load_campaign_or_exit(store, campaign_id)
+    # Support prefix match — normalise to full ID
+    material = _load_by_prefix_or_exact(store.source_materials, source_id, "Source material")
+    source_id = material.id
     if source_id not in campaign.source_material_ids:
-        console.print(f"[yellow]Source material {source_id!r} is not linked to this campaign.[/yellow]")
+        console.print(f"[yellow]Source material {source_id[:8]!r} is not linked to this campaign.[/yellow]")
         return
     campaign.source_material_ids.remove(source_id)
     store.campaigns.save(campaign)
-    console.print(f"[green]Removed source material {source_id[:8]!r} from campaign {campaign.name!r}.[/green]")
+    console.print(f"[green]Removed {material.title!r} from campaign {campaign.name!r}.[/green]")
 
 
 @campaign_app.command("add-enemy")
@@ -330,10 +338,8 @@ def campaign_add_enemy(
     """Add an enemy/antagonist stat-block to the campaign enemy roster."""
     store = _get_store(data_dir)
     campaign = _load_campaign_or_exit(store, campaign_id)
-    enemy = store.characters.load(character_id)
-    if enemy is None:
-        console.print(f"[red]Character not found: {character_id}[/red]")
-        raise typer.Exit(1)
+    enemy = _load_by_prefix_or_exact(store.characters, character_id, "Character")
+    character_id = enemy.id  # normalise to full ID
     if character_id in campaign.enemy_ids:
         console.print(f"[yellow]{enemy.name!r} is already in the enemy roster.[/yellow]")
         return
@@ -351,12 +357,14 @@ def campaign_remove_enemy(
     """Remove an enemy/antagonist from the campaign enemy roster."""
     store = _get_store(data_dir)
     campaign = _load_campaign_or_exit(store, campaign_id)
+    enemy = _load_by_prefix_or_exact(store.characters, character_id, "Character")
+    character_id = enemy.id  # normalise to full ID
     if character_id not in campaign.enemy_ids:
-        console.print(f"[yellow]Character {character_id!r} is not in the enemy roster.[/yellow]")
+        console.print(f"[yellow]{enemy.name!r} is not in the enemy roster.[/yellow]")
         return
     campaign.enemy_ids.remove(character_id)
     store.campaigns.save(campaign)
-    console.print(f"[green]Removed {character_id[:8]!r} from enemy roster of {campaign.name!r}.[/green]")
+    console.print(f"[green]Removed {enemy.name!r} from enemy roster of {campaign.name!r}.[/green]")
 
 
 @campaign_app.command("enemies")

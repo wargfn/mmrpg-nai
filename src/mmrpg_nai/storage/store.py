@@ -71,6 +71,17 @@ class _Repo(Generic[T]):
                 logger.warning("Skipping corrupt data file %s: %s", p, exc)
         return items
 
+    def load_by_prefix(self, prefix: str) -> T | None:
+        """Load an item whose ID starts with *prefix*. Returns None if zero or multiple match."""
+        matches = [p for p in self._dir.glob("*.json") if p.stem.startswith(prefix)]
+        if len(matches) != 1:
+            return None
+        try:
+            return self._cls.model_validate_json(matches[0].read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("Skipping corrupt data file %s: %s", matches[0], exc)
+            return None
+
     def find(self, **filters: Any) -> list[T]:
         results = []
         for item in self.list_all():

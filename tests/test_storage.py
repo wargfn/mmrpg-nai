@@ -215,3 +215,35 @@ def test_campaign_enemies_list(store: Store):
     result = runner.invoke(app, ["campaign", "enemies", campaign.id, "--data-dir", str(store.base_dir)])
     assert result.exit_code == 0, result.output
     assert "Red Skull" in result.output
+
+
+def test_load_by_prefix(store: Store):
+    campaign = Campaign(name="Prefix Test")
+    store.campaigns.save(campaign)
+    prefix = campaign.id[:8]
+    loaded = store.campaigns.load_by_prefix(prefix)
+    assert loaded is not None
+    assert loaded.id == campaign.id
+
+
+def test_campaign_add_source_with_prefix(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import SourceMaterial
+
+    campaign = Campaign(name="Prefix Source Test")
+    store.campaigns.save(campaign)
+    mat = SourceMaterial(title="Rulebook", file_path="/fake.pdf")
+    store.source_materials.save(mat)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "campaign", "add-source",
+        campaign.id[:8],   # prefix only
+        mat.id[:8],        # prefix only
+        "--data-dir", str(store.base_dir),
+    ])
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert mat.id in reloaded.source_material_ids
