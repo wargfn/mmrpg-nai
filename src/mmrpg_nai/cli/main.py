@@ -275,6 +275,111 @@ def campaign_plan(
     console.print(Markdown(plan))
 
 
+def _load_campaign_or_exit(store: "Store", campaign_id: str) -> "Campaign":
+    campaign = store.campaigns.load(campaign_id)
+    if campaign is None:
+        console.print(f"[red]Campaign not found: {campaign_id}[/red]")
+        raise typer.Exit(1)
+    return campaign
+
+
+@campaign_app.command("add-source")
+def campaign_add_source(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    source_id: str = typer.Argument(..., help="Source material ID (from 'pdf list')"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Link a PDF source material to a campaign."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    material = store.source_materials.load(source_id)
+    if material is None:
+        console.print(f"[red]Source material not found: {source_id}[/red]")
+        raise typer.Exit(1)
+    if source_id in campaign.source_material_ids:
+        console.print(f"[yellow]{material.title!r} is already linked to this campaign.[/yellow]")
+        return
+    campaign.source_material_ids.append(source_id)
+    store.campaigns.save(campaign)
+    console.print(f"[green]Linked source material {material.title!r} to campaign {campaign.name!r}.[/green]")
+
+
+@campaign_app.command("remove-source")
+def campaign_remove_source(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    source_id: str = typer.Argument(..., help="Source material ID"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Unlink a PDF source material from a campaign."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    if source_id not in campaign.source_material_ids:
+        console.print(f"[yellow]Source material {source_id!r} is not linked to this campaign.[/yellow]")
+        return
+    campaign.source_material_ids.remove(source_id)
+    store.campaigns.save(campaign)
+    console.print(f"[green]Removed source material {source_id[:8]!r} from campaign {campaign.name!r}.[/green]")
+
+
+@campaign_app.command("add-enemy")
+def campaign_add_enemy(
+    campaign_id: str = typer.Argument(..., help="Campaign ID"),
+    character_id: str = typer.Argument(..., help="Character ID of the enemy (from 'character list')"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Add an enemy/antagonist stat-block to the campaign enemy roster."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    enemy = store.characters.load(character_id)
+    if enemy is None:
+        console.print(f"[red]Character not found: {character_id}[/red]")
+        raise typer.Exit(1)
+    if character_id in campaign.enemy_ids:
+        console.print(f"[yellow]{enemy.name!r} is already in the enemy roster.[/yellow]")
+        return
+    campaign.enemy_ids.append(character_id)
+    store.campaigns.save(campaign)
+    console.print(f"[green]Added {enemy.name!r} ({enemy.alias}) to enemy roster of {campaign.name!r}.[/green]")
+
+
+@campaign_app.command("remove-enemy")
+def campaign_remove_enemy(
+    campaign_id: str = typer.Argument(..., help="Campaign ID"),
+    character_id: str = typer.Argument(..., help="Character ID of the enemy"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Remove an enemy/antagonist from the campaign enemy roster."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    if character_id not in campaign.enemy_ids:
+        console.print(f"[yellow]Character {character_id!r} is not in the enemy roster.[/yellow]")
+        return
+    campaign.enemy_ids.remove(character_id)
+    store.campaigns.save(campaign)
+    console.print(f"[green]Removed {character_id[:8]!r} from enemy roster of {campaign.name!r}.[/green]")
+
+
+@campaign_app.command("enemies")
+def campaign_enemies(
+    campaign_id: str = typer.Argument(..., help="Campaign ID"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """List enemies/antagonists saved to a campaign."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    if not campaign.enemy_ids:
+        console.print("[yellow]No enemies in this campaign's roster yet.[/yellow]")
+        return
+    table = Table("ID", "Name", "Alias", "Rank", "Tier", "HP")
+    for eid in campaign.enemy_ids:
+        e = store.characters.load(eid)
+        if e is None:
+            table.add_row(eid[:8], "[dim]<deleted>[/dim]", "", "", "", "")
+        else:
+            table.add_row(e.id[:8], e.name, e.alias, e.rank.value, str(e.tier), str(e.health))
+    console.print(table)
+
+
 # ---------------------------------------------------------------------------
 # Session commands
 # ---------------------------------------------------------------------------

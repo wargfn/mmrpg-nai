@@ -107,3 +107,111 @@ def test_session_create_links_to_campaign(store: Store):
     reloaded = store.campaigns.load(campaign.id)
     assert reloaded is not None
     assert len(reloaded.session_ids) == 1
+
+
+def test_campaign_add_source(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import SourceMaterial
+
+    campaign = Campaign(name="Source Test")
+    store.campaigns.save(campaign)
+    mat = SourceMaterial(title="Core Rulebook", file_path="/fake.pdf")
+    store.source_materials.save(mat)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["campaign", "add-source", campaign.id, mat.id, "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert mat.id in reloaded.source_material_ids
+
+
+def test_campaign_add_source_duplicate(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import SourceMaterial
+
+    campaign = Campaign(name="Dup Test")
+    store.campaigns.save(campaign)
+    mat = SourceMaterial(title="Rulebook", file_path="/fake.pdf")
+    store.source_materials.save(mat)
+
+    runner = CliRunner()
+    runner.invoke(app, ["campaign", "add-source", campaign.id, mat.id, "--data-dir", str(store.base_dir)])
+    result = runner.invoke(app, ["campaign", "add-source", campaign.id, mat.id, "--data-dir", str(store.base_dir)])
+    assert "already linked" in result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert reloaded.source_material_ids.count(mat.id) == 1
+
+
+def test_campaign_remove_source(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import SourceMaterial
+
+    mat = SourceMaterial(title="Rulebook", file_path="/fake.pdf")
+    store.source_materials.save(mat)
+    campaign = Campaign(name="Remove Test", source_material_ids=[mat.id])
+    store.campaigns.save(campaign)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["campaign", "remove-source", campaign.id, mat.id, "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert mat.id not in reloaded.source_material_ids
+
+
+def test_campaign_add_enemy(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import Character
+
+    campaign = Campaign(name="Enemy Test")
+    store.campaigns.save(campaign)
+    villain = Character(name="Doctor Doom", alias="Victor von Doom", is_npc=True)
+    store.characters.save(villain)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["campaign", "add-enemy", campaign.id, villain.id, "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+    assert "Doctor Doom" in result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert villain.id in reloaded.enemy_ids
+
+
+def test_campaign_remove_enemy(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import Character
+
+    villain = Character(name="Thanos", alias="Mad Titan", is_npc=True)
+    store.characters.save(villain)
+    campaign = Campaign(name="Thanos Campaign", enemy_ids=[villain.id])
+    store.campaigns.save(campaign)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["campaign", "remove-enemy", campaign.id, villain.id, "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert villain.id not in reloaded.enemy_ids
+
+
+def test_campaign_enemies_list(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import Character
+
+    villain = Character(name="Red Skull", alias="Johann Schmidt", is_npc=True)
+    store.characters.save(villain)
+    campaign = Campaign(name="Skull Campaign", enemy_ids=[villain.id])
+    store.campaigns.save(campaign)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["campaign", "enemies", campaign.id, "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+    assert "Red Skull" in result.output

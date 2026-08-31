@@ -160,6 +160,7 @@ class Campaign(BaseModel):
     settings: CampaignSettings = Field(default_factory=CampaignSettings)
     session_ids: list[str] = Field(default_factory=list)
     character_ids: list[str] = Field(default_factory=list)
+    enemy_ids: list[str] = Field(default_factory=list, description="Character IDs of enemies/antagonists for this campaign")
     adventure_ids: list[str] = Field(default_factory=list)
     source_material_ids: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

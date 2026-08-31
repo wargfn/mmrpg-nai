@@ -150,6 +150,54 @@ mmrpg-nai campaign plan <campaign-id>
 # --brief "A Hydra sleeper agent has infiltrated the X-Men"
 ```
 
+#### `campaign add-source <campaign-id> <source-id>`
+Link an ingested PDF source material to a campaign so its text is injected into every session.
+```bash
+# First, check the source material ID
+mmrpg-nai pdf list
+
+# Then link it
+mmrpg-nai campaign add-source <campaign-id> <source-material-id>
+```
+
+#### `campaign remove-source <campaign-id> <source-id>`
+Unlink a source material from a campaign.
+```bash
+mmrpg-nai campaign remove-source <campaign-id> <source-material-id>
+```
+
+#### `campaign add-enemy <campaign-id> <character-id>`
+Add an enemy/antagonist stat-block to the campaign's enemy roster.
+The character must already exist (create it with `character create` — use `--is-npc` flag).
+```bash
+# Create the villain character first
+mmrpg-nai character create --name "Doctor Doom" --alias "Victor von Doom" --is-npc
+
+# Then add to campaign roster
+mmrpg-nai campaign add-enemy <campaign-id> <character-id>
+```
+
+#### `campaign remove-enemy <campaign-id> <character-id>`
+Remove an enemy from the campaign's enemy roster.
+```bash
+mmrpg-nai campaign remove-enemy <campaign-id> <character-id>
+```
+
+#### `campaign enemies <campaign-id>`
+List all enemies/antagonists saved to a campaign's roster.
+```bash
+mmrpg-nai campaign enemies <campaign-id>
+```
+Output:
+```
+┌──────────┬──────────────┬──────────────────┬──────────┬──────┬────┐
+│ ID       │ Name         │ Alias            │ Rank     │ Tier │ HP │
+├──────────┼──────────────┼──────────────────┼──────────┼──────┼────┤
+│ a1b2c3d4 │ Doctor Doom  │ Victor von Doom  │ master   │ 3    │ 80 │
+│ e5f6g7h8 │ Thanos       │ Mad Titan        │ legendary│ 5    │ 150│
+└──────────┴──────────────┴──────────────────┴──────────┴──────┴────┘
+```
+
 ---
 
 ### `mmrpg-nai session` — Sessions
