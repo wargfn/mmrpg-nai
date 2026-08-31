@@ -379,6 +379,19 @@ def session_run(
     # ------------------------------------------------------------------
     _META_RE = _re.compile(r"^\s*\[(.+)\]\s*$")
 
+    def _print_llm_error(exc: Exception) -> None:
+        """Print a structured, actionable error panel for LLM failures."""
+        if isinstance(exc, EnvironmentError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Token not set[/bold red]", border_style="red"))
+        elif isinstance(exc, PermissionError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Authentication error[/bold red]", border_style="red"))
+        elif isinstance(exc, ConnectionError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Connection error[/bold red]", border_style="red"))
+        elif isinstance(exc, RuntimeError):
+            console.print(Panel(str(exc), title="[bold red]⚠ API error[/bold red]", border_style="red"))
+        else:
+            console.print(f"[red]Error: {exc}[/red]")
+
     while True:
         try:
             player_input = Prompt.ask("[bold green]You[/bold green]")
@@ -400,13 +413,13 @@ def session_run(
             try:
                 narrator.meta_direction(direction, stream=stream)
             except Exception as exc:
-                console.print(f"[red]Error: {exc}[/red]")
+                _print_llm_error(exc)
         else:
             console.print("[bold blue]Narrator[/bold blue]")
             try:
                 narrator.narrate(player_input, stream=stream)
             except Exception as exc:
-                console.print(f"[red]Error: {exc}[/red]")
+                _print_llm_error(exc)
         console.print()
 
     session.ended_at = datetime.now(timezone.utc)
