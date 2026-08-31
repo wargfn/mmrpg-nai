@@ -262,10 +262,7 @@ def campaign_plan(
     """Use AI to draft a campaign plan."""
     store = _get_store(data_dir)
     cfg = store.load_config()
-    campaign = store.campaigns.load(campaign_id)
-    if campaign is None:
-        console.print(f"[red]Campaign not found: {campaign_id}[/red]")
-        raise typer.Exit(1)
+    campaign = _load_campaign_or_exit(store, campaign_id)
 
     from mmrpg_nai.llm.narrator import Narrator
 
@@ -541,10 +538,8 @@ def session_run(
 
     else:
         # Resume by explicit session ID
-        session = store.sessions.load(session_id)
-        if session is None:
-            console.print(f"[red]Session not found: {session_id}[/red]")
-            raise typer.Exit(1)
+        session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
+        session_id = session.id  # normalise
         campaign = store.campaigns.load(session.campaign_id)
         if campaign is None:
             console.print(f"[red]Campaign not found: {session.campaign_id}[/red]")
@@ -665,10 +660,7 @@ def session_log(
 ) -> None:
     """Print the log for a session."""
     store = _get_store(data_dir)
-    session = store.sessions.load(session_id)
-    if session is None:
-        console.print(f"[red]Session not found: {session_id}[/red]")
-        raise typer.Exit(1)
+    session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
     for entry in session.log:
         if entry.role == "narrator":
             color = "blue"
@@ -725,10 +717,7 @@ def character_show(
 ) -> None:
     """Show full character stat-block."""
     store = _get_store(data_dir)
-    char = store.characters.load(character_id)
-    if char is None:
-        console.print(f"[red]Character not found: {character_id}[/red]")
-        raise typer.Exit(1)
+    char = _load_by_prefix_or_exact(store.characters, character_id, "Character")
     console.print_json(char.model_dump_json(indent=2))
 
 
