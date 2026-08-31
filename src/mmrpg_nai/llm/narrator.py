@@ -12,6 +12,7 @@ from mmrpg_nai.models.core import (
     LogEntry,
     NarratorConfig,
     Session,
+    SourceMaterial,
 )
 from mmrpg_nai.storage.store import Store
 
@@ -34,11 +35,13 @@ class Narrator:
         session: Session,
         campaign: Campaign,
         party: list[Character],
+        source_materials: list[SourceMaterial] | None = None,
     ) -> None:
         """Initialise the conversation context for a new or resumed session."""
         self._session = session
         self._campaign = campaign
         self._party = party
+        self._source_materials: list[SourceMaterial] = source_materials or []
         self._messages = self._build_system_messages(session, campaign, party)
 
     def _build_system_messages(
@@ -71,6 +74,22 @@ class Narrator:
         # Inject any extra system prompts from config
         for key, prompt in self.cfg.extra_prompts.items():
             parts.append(f"\n## {key}\n{prompt}")
+
+        # Source material injection
+        if self.cfg.max_source_chars > 0 and getattr(self, "_source_materials", None):
+            from mmrpg_nai.pdf.ingestion import load_source_text
+
+            remaining = self.cfg.max_source_chars
+            source_parts: list[str] = []
+            for mat in self._source_materials:
+                if remaining <= 0:
+                    break
+                text = load_source_text(mat, max_chars=remaining)
+                if text:
+                    source_parts.append(f"### {mat.title}\n{text}")
+                    remaining -= len(text)
+            if source_parts:
+                parts.append("\n## Rules & Source Materials\n" + "\n\n".join(source_parts))
 
         system_content = "\n".join(parts)
         messages: list[dict] = [{"role": "system", "content": system_content}]

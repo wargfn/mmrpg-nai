@@ -133,3 +133,98 @@ def test_recap_last_session_empty_returns_empty_string(cfg, store, campaign, cha
     # Empty prev session – no LLM call, returns ""
     assert recap == ""
     narrator.llm.complete.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Source material injection tests
+# ---------------------------------------------------------------------------
+
+def test_source_material_injected_into_system_prompt(cfg, store, session, campaign, character, tmp_path):
+    """Source material text should appear under ## Rules & Source Materials."""
+    from mmrpg_nai.models.core import SourceMaterial
+
+    # Write a fake extracted text file
+    txt = tmp_path / "rulebook.txt"
+    txt.write_text("Roll 2d6 for every action.", encoding="utf-8")
+
+    mat = SourceMaterial(
+        title="Core Rulebook",
+        file_path="/fake/rulebook.pdf",
+        extracted_text_path=str(txt),
+    )
+    store.source_materials.save(mat)
+    campaign.source_material_ids = [mat.id]
+    store.campaigns.save(campaign)
+
+    narrator = Narrator.__new__(Narrator)
+    narrator.cfg = cfg
+    narrator.store = store
+    narrator.llm = MagicMock()
+    narrator.llm.complete.return_value = "LLM response"
+    narrator._messages = []
+    narrator.start_session(session, campaign, [character], source_materials=[mat])
+
+    system_content = narrator._messages[0]["content"]
+    assert "Rules & Source Materials" in system_content
+    assert "Roll 2d6" in system_content
+
+
+def test_no_source_materials_skips_section(cfg, store, session, campaign, character):
+    """When no source materials are passed, the section must not appear."""
+    narrator = _make_narrator(cfg, store, session, campaign, [character])
+    system_content = narrator._messages[0]["content"]
+    assert "Rules & Source Materials" not in system_content
+
+
+def test_max_source_chars_zero_disables_injection(cfg, store, session, campaign, character, tmp_path):
+    """Setting max_source_chars=0 should suppress injection even if materials exist."""
+    from mmrpg_nai.models.core import NarratorConfig, SourceMaterial
+
+    txt = tmp_path / "rules.txt"
+    txt.write_text("Many rules here.", encoding="utf-8")
+    mat = SourceMaterial(
+        title="Rules",
+        file_path="/fake/rules.pdf",
+        extracted_text_path=str(txt),
+    )
+    store.source_materials.save(mat)
+
+    cfg_no_inject = NarratorConfig(max_source_chars=0)
+    narrator = Narrator.__new__(Narrator)
+    narrator.cfg = cfg_no_inject
+    narrator.store = store
+    narrator.llm = MagicMock()
+    narrator._messages = []
+    narrator.start_session(session, campaign, [character], source_materials=[mat])
+
+    system_content = narrator._messages[0]["content"]
+    assert "Rules & Source Materials" not in system_content
+
+
+def test_max_source_chars_truncates_text(cfg, store, session, campaign, character, tmp_path):
+    """Text beyond max_source_chars should be truncated."""
+    from mmrpg_nai.models.core import NarratorConfig, SourceMaterial
+
+    long_text = "X" * 5000
+    txt = tmp_path / "big.txt"
+    txt.write_text(long_text, encoding="utf-8")
+    mat = SourceMaterial(
+        title="Big Book",
+        file_path="/fake/big.pdf",
+        extracted_text_path=str(txt),
+    )
+    store.source_materials.save(mat)
+
+    cfg_small = NarratorConfig(max_source_chars=100)
+    narrator = Narrator.__new__(Narrator)
+    narrator.cfg = cfg_small
+    narrator.store = store
+    narrator.llm = MagicMock()
+    narrator._messages = []
+    narrator.start_session(session, campaign, [character], source_materials=[mat])
+
+    system_content = narrator._messages[0]["content"]
+    assert "Rules & Source Materials" in system_content
+    # Only 100 chars of the 5000-char text should be injected
+    injected = system_content.split("### Big Book\n", 1)[1]
+    assert len(injected) <= 100

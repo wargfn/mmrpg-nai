@@ -235,3 +235,6 @@ class NarratorConfig(BaseModel):
         "Maintain continuity with the campaign log and character sheets provided to you."
     )
     extra_prompts: dict[str, str] = Field(default_factory=dict)
+    # Max total characters of PDF source material text injected per session.
+    # Set to 0 to disable injection.
+    max_source_chars: int = 20_000

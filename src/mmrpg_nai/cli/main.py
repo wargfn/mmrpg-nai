@@ -440,15 +440,28 @@ def session_run(
     # ------------------------------------------------------------------
     # 4. Start narrator
     # ------------------------------------------------------------------
+    # Load source materials linked to this campaign
+    source_materials = [
+        m
+        for mid in campaign.source_material_ids
+        if (m := store.source_materials.load(mid)) is not None
+    ]
+
     narrator = Narrator(cfg, store)
-    narrator.start_session(session, campaign, party)
+    narrator.start_session(session, campaign, party, source_materials=source_materials)
 
     party_names = ", ".join(c.name for c in party) if party else "Unknown party"
+    sources_line = (
+        f"\n[bold]Source Materials:[/bold] {', '.join(m.title for m in source_materials)}"
+        if source_materials
+        else ""
+    )
     console.print(
         Panel(
             f"[bold]Session:[/bold] {session.title}  (#{session.session_number})\n"
             f"[bold]Campaign:[/bold] {campaign.name}\n"
-            f"[bold]Party:[/bold] {party_names}",
+            f"[bold]Party:[/bold] {party_names}"
+            f"{sources_line}",
             title="🦸 MMRPG Narrator AI",
         )
     )
