@@ -95,10 +95,14 @@ mmrpg-nai config show
 #### `config set <key> <value>`
 Set any configuration value using dot-notation.
 ```bash
+# LLM settings
 mmrpg-nai config set llm.model gpt-4o
 mmrpg-nai config set llm.temperature 0.9
 mmrpg-nai config set llm.max_tokens 8192
 mmrpg-nai config set llm.api_base https://api.githubcopilot.com
+
+# Narrator settings
+mmrpg-nai config set narrator.max_source_chars 40000   # max PDF text injected per session (0 = disabled)
 ```
 
 #### `config system-prompt`
@@ -474,6 +478,52 @@ mmrpg-nai config set llm.model gpt-4o
 # Tune generation
 mmrpg-nai config set llm.temperature 0.7
 mmrpg-nai config set llm.max_tokens 4096
+```
+
+### Configuration reference
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `llm.model` | `gpt-5.4` | Model ID from [GitHub Marketplace](https://github.com/marketplace/models) |
+| `llm.api_base` | `https://api.githubcopilot.com` | API endpoint |
+| `llm.api_key_env` | `GITHUB_TOKEN` | Environment variable holding the API key |
+| `llm.temperature` | `0.8` | Sampling temperature (0 = deterministic, 1 = creative) |
+| `llm.max_tokens` | `4096` | Maximum tokens in each LLM response |
+| `narrator.system_prompt` | *(built-in)* | Main narrator system prompt (replace with `config system-prompt`) |
+| `narrator.max_source_chars` | `20000` | Max characters of PDF source material injected per session; set to `0` to disable |
+| `narrator.extra_prompts` | `{}` | Named extra prompt sections appended to every system prompt |
+
+### Source material injection
+
+When you link PDFs to a campaign, their extracted text is automatically injected into the
+Narrator's system prompt at the start of every session under a `## Rules & Source Materials`
+section.  This gives the AI access to rulebook text, enemy stat-blocks, and lore without
+manual copy-pasting.
+
+```bash
+# 1. Ingest a PDF (one-time)
+mmrpg-nai pdf ingest "MMRPG Core Rulebook.pdf" \
+  --title "Core Rulebook" \
+  --categories "rules,combat,powers"
+
+# 2. Note the ID from the output, then link it to your campaign
+#    (edit data/campaigns/<campaign-id>.json and add the ID to source_material_ids)
+
+# 3. Control how much text is injected (default 20 000 chars ≈ 10-15 rulebook pages)
+mmrpg-nai config set narrator.max_source_chars 40000
+
+# 4. Disable injection entirely
+mmrpg-nai config set narrator.max_source_chars 0
+```
+
+The startup panel shows which source materials are loaded for each session:
+```
+╭─ 🦸 MMRPG Narrator AI ──────────────────────────────╮
+│ Session: Session 3 (#3)                              │
+│ Campaign: Dark Avengers Arc                          │
+│ Party: Spider-Man, Iron Man                          │
+│ Source Materials: Core Rulebook, Antagonists Book    │
+╰──────────────────────────────────────────────────────╯
 ```
 
 ### Extra named prompts
