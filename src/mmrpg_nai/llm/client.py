@@ -61,8 +61,8 @@ def _wrap_api_error(exc: Exception, cfg: LLMConfig) -> Exception:
             f"API returned HTTP {exc.status_code}.\n"
             f"  Response: {exc.message}\n"
             f"  Model requested: {cfg.model}\n"
-            "  • Verify the model name is correct (e.g. 'gpt-5.4').\n"
-            "  • Check https://github.com/marketplace/models for available models."
+            "  • Verify the model name is correct (run: mmrpg-nai config models).\n"
+            "  • Check https://github.com/features/copilot for supported models."
         )
     return exc
 
@@ -89,7 +89,7 @@ class LLMClient:
         kwargs: dict = dict(
             model=self.cfg.model,
             messages=messages,
-            max_tokens=self.cfg.max_tokens,
+            max_completion_tokens=self.cfg.max_tokens,
             temperature=self.cfg.temperature,
             stream=stream,
         )

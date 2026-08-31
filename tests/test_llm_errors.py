@@ -31,7 +31,7 @@ def test_build_client_raises_when_token_missing(cfg):
 
 def test_build_client_raises_when_token_empty(cfg):
     with patch.dict(os.environ, {"TEST_OPENAI_KEY": "   "}):
-        with pytest.raises(EnvironmentError, match="models"):
+        with pytest.raises(EnvironmentError, match="GitHub Copilot"):
             _build_client(cfg)
 
 
@@ -52,7 +52,7 @@ def test_wrap_auth_error(cfg):
     wrapped = _wrap_api_error(exc, cfg)
     assert isinstance(wrapped, PermissionError)
     assert "Authentication failed" in str(wrapped)
-    assert "models" in str(wrapped).lower()
+    assert "copilot" in str(wrapped).lower()
 
 
 def test_wrap_rate_limit_error(cfg):
