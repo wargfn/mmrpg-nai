@@ -150,12 +150,34 @@ def config_models(
         raise typer.Exit(1)
 
     try:
-        from openai import OpenAI as _OpenAI
+        from openai import (
+            APIConnectionError as _APIConnectionError,
+            APIStatusError as _APIStatusError,
+            AuthenticationError as _AuthenticationError,
+            OpenAI as _OpenAI,
+            RateLimitError as _RateLimitError,
+        )
+        from mmrpg_nai.llm.client import _wrap_api_error
+
         client = _OpenAI(base_url=cfg.llm.api_base, api_key=api_key)
         models_response = client.models.list()
+    except (_APIConnectionError, _APIStatusError, _AuthenticationError, _RateLimitError) as exc:
+        wrapped = _wrap_api_error(exc, cfg.llm)
+        if isinstance(wrapped, PermissionError):
+            console.print(Panel(str(wrapped), title="[bold red]⚠ Authentication error[/bold red]", border_style="red"))
+        elif isinstance(wrapped, ConnectionError):
+            console.print(Panel(str(wrapped), title="[bold red]⚠ Connection error[/bold red]", border_style="red"))
+        else:
+            console.print(Panel(str(wrapped), title="[bold red]⚠ API error[/bold red]", border_style="red"))
+        raise typer.Exit(1)
     except Exception as exc:
-        console.print(f"[red]Failed to fetch models: {exc}[/red]")
-        console.print(f"[dim]Endpoint: {cfg.llm.api_base}[/dim]")
+        console.print(
+            Panel(
+                f"{exc}\n\nEndpoint: {cfg.llm.api_base}",
+                title="[bold red]⚠ Failed to fetch models[/bold red]",
+                border_style="red",
+            )
+        )
         raise typer.Exit(1)
 
     model_data = sorted(models_response.data, key=lambda m: m.id.lower())

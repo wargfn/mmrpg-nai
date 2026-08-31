@@ -94,7 +94,7 @@ def test_config_models_no_token(data_dir):
 
 
 def test_config_models_api_failure(data_dir):
-    """A network error from the OpenAI client is reported cleanly."""
+    """A generic exception is reported in a panel."""
     with patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
         with patch("openai.OpenAI") as mock_cls:
             mock_client = MagicMock()
@@ -103,4 +103,46 @@ def test_config_models_api_failure(data_dir):
             result = runner.invoke(app, ["config", "models", "--data-dir", data_dir])
 
     assert result.exit_code != 0
-    assert "Failed to fetch models" in result.output
+    # Should show a panel with error info — old bare message replaced by panel title
+    assert "Failed to fetch models" in result.output or "connection refused" in result.output
+
+
+def test_config_models_connection_error_panel(data_dir):
+    """An APIConnectionError shows a 'Connection error' panel with actionable guidance."""
+    from openai import APIConnectionError
+    from unittest.mock import MagicMock as _MagicMock
+
+    def _mock_request():
+        req = _MagicMock()
+        req.method = "POST"
+        req.url = "https://example.com"
+        return req
+
+    with patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.models.list.side_effect = APIConnectionError(request=_mock_request())
+            result = runner.invoke(app, ["config", "models", "--data-dir", data_dir])
+
+    assert result.exit_code != 0
+    assert "Connection error" in result.output
+    # Should contain actionable guidance (internet / endpoint / proxy)
+    assert any(word in result.output for word in ["internet", "endpoint", "proxy"])
+
+
+def test_config_models_auth_error_panel(data_dir):
+    """An AuthenticationError shows a permission-error panel."""
+    from openai import AuthenticationError
+
+    with patch.dict(os.environ, {"GITHUB_TOKEN": "bad-token"}):
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.models.list.side_effect = AuthenticationError(
+                "bad token", response=MagicMock(status_code=401), body={}
+            )
+            result = runner.invoke(app, ["config", "models", "--data-dir", data_dir])
+
+    assert result.exit_code != 0
+    assert "Authentication" in result.output
