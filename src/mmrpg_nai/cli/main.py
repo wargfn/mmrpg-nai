@@ -315,6 +315,11 @@ def session_create(
         session_number=len(existing) + 1,
     )
     store.sessions.save(session)
+    # Link session to campaign
+    campaign = store.campaigns.load(campaign_id)
+    if campaign is not None:
+        campaign.session_ids.append(session.id)
+        store.campaigns.save(campaign)
     console.print(f"[green]Session created: {session.id}[/green]")
 
 
@@ -413,6 +418,9 @@ def session_run(
             participants=[c.id for c in party],
         )
         store.sessions.save(session)
+        # Link session to campaign
+        campaign.session_ids.append(session.id)
+        store.campaigns.save(campaign)
         console.print(f"[green]Created session #{session.session_number}: {session.id}[/green]")
 
         # Find the previous session for recap

@@ -81,3 +81,29 @@ def test_store_find(store: Store):
     npcs = store.characters.find(is_npc=True)
     assert len(npcs) == 1
     assert npcs[0].name == "Hydra Agent"
+
+
+def test_session_create_links_to_campaign(store: Store):
+    """Creating a session via session_create should register its ID on the campaign."""
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    import os
+
+    campaign = Campaign(name="Link Test Campaign")
+    store.campaigns.save(campaign)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "session", "create",
+            "--campaign-id", campaign.id,
+            "--title", "Test Session",
+            "--data-dir", str(store.base_dir),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert reloaded is not None
+    assert len(reloaded.session_ids) == 1
