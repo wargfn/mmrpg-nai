@@ -14,12 +14,13 @@ It uses the **GitHub Copilot GPT-5.4** language model (configurable) to help you
 | **Interactive Sessions** | Run fully narrated sessions from the command line |
 | **Out-of-Game Meta Directions** | Use `[square brackets]` during a session to send GM-level instructions to the AI |
 | **Session Recap** | AI generates a "Previously on…" recap at the start of each session |
-| **Session Logs** | Persistent, append-only logs for every session |
+| **Session Logs** | Persistent, append-only logs for every session — automatically linked to their campaign |
 | **Character Stat-Blocks** | Store and manage custom player characters and NPCs |
+| **Enemy Roster** | Save villain/antagonist stat-blocks to a campaign for quick reuse |
 | **Equipment Store** | Catalogue weapons, armour, gadgets and vehicles |
 | **Power Sets** | Manage Marvel Multiverse power sets with individual powers |
 | **Adventure Templates** | Import/export adventures from a standard JSON template |
-| **PDF Source Materials** | Ingest rulebooks, bestiaries, and supplements as AI context |
+| **PDF Source Materials** | Ingest rulebooks, bestiaries, and supplements as AI context — injected automatically each session |
 | **MCP REST Service** | FastAPI service exposing all data to other tools |
 | **Settings & Prompts** | Configure LLM settings, system prompts, and extra named prompts |
 
@@ -53,10 +54,19 @@ export $(grep -v '^#' .env | xargs)
 # 1. Create a campaign
 mmrpg-nai campaign create
 
-# 2. Start a session (prompts for campaign + characters)
+# 2. (Optional) Ingest a rulebook PDF and link it to your campaign
+mmrpg-nai pdf ingest "MMRPG_Core_Rulebook.pdf" --title "Core Rulebook" --categories "rules,combat"
+mmrpg-nai pdf list                                    # copy the source material ID
+mmrpg-nai campaign add-source <campaign-id> <source-id>
+
+# 3. (Optional) Add enemy stat-blocks to the campaign roster
+mmrpg-nai character import doctor_doom.json           # import or create villain
+mmrpg-nai campaign add-enemy <campaign-id> <character-id>
+
+# 4. Start a session (prompts for campaign + characters)
 mmrpg-nai session run
 
-# 3. View the log afterwards
+# 5. View the log afterwards
 mmrpg-nai session log <session-id>
 ```
 
@@ -554,8 +564,9 @@ mmrpg-nai pdf ingest "MMRPG Core Rulebook.pdf" \
   --title "Core Rulebook" \
   --categories "rules,combat,powers"
 
-# 2. Note the ID from the output, then link it to your campaign
-#    (edit data/campaigns/<campaign-id>.json and add the ID to source_material_ids)
+# 2. Link it to your campaign using the ID shown by 'pdf list'
+mmrpg-nai pdf list
+mmrpg-nai campaign add-source <campaign-id> <source-material-id>
 
 # 3. Control how much text is injected (default 20 000 chars ≈ 10-15 rulebook pages)
 mmrpg-nai config set narrator.max_source_chars 40000
