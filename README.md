@@ -98,7 +98,7 @@ Set any configuration value using dot-notation.
 mmrpg-nai config set llm.model gpt-4o
 mmrpg-nai config set llm.temperature 0.9
 mmrpg-nai config set llm.max_tokens 8192
-mmrpg-nai config set llm.api_base https://models.inference.ai.azure.com
+mmrpg-nai config set llm.api_base https://api.githubcopilot.com
 ```
 
 #### `config system-prompt`
@@ -112,7 +112,7 @@ mmrpg-nai config system-prompt --prompt-file my_prompt.txt
 ```
 
 #### `config models`
-Query the GitHub Models endpoint and print a table of all available model IDs.
+Query the GitHub Copilot API endpoint and print a table of all available model IDs.
 The currently active model is highlighted with ✓.
 ```bash
 # List all models
@@ -462,7 +462,7 @@ pytest
 
 ## LLM Configuration
 
-Default model: **GPT-5.4** via `https://models.inference.ai.azure.com` (GitHub Models).
+Default model: **GPT-5.4** via `https://api.githubcopilot.com` (GitHub Copilot API).
 
 ```bash
 # See all available models (requires GITHUB_TOKEN)

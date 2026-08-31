@@ -120,7 +120,7 @@ def config_models(
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
     filter_text: Optional[str] = typer.Option(None, "--filter", "-f", help="Case-insensitive substring to filter model IDs"),
 ) -> None:
-    """List models available on the GitHub Models inference endpoint.
+    """List models available on the GitHub Copilot API endpoint.
 
     Reads your token from the environment variable configured in llm.api_key_env
     (default: GITHUB_TOKEN) and queries the /models endpoint.  The current model
@@ -141,7 +141,7 @@ def config_models(
             Panel(
                 f"Environment variable [bold]{cfg.llm.api_key_env!r}[/bold] is not set.\n"
                 "  1. Create a GitHub token at https://github.com/settings/tokens\n"
-                "  2. Grant it the 'models' (read) permission\n"
+                "  2. Enable GitHub Copilot on your account (https://github.com/features/copilot)\n"
                 "  3. Export it:  export GITHUB_TOKEN=ghp_...",
                 title="[bold red]⚠ Token not set[/bold red]",
                 border_style="red",

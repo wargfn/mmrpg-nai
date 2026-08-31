@@ -27,7 +27,7 @@ def _build_client(cfg: LLMConfig) -> OpenAI:
         raise EnvironmentError(
             f"Environment variable {cfg.api_key_env!r} is not set or is empty.\n"
             "  1. Create a GitHub Personal Access Token at https://github.com/settings/tokens\n"
-            "  2. Grant it the 'models' (read) permission under 'GitHub Models'\n"
+            "  2. Enable GitHub Copilot on your account (https://github.com/features/copilot)\n"
             "  3. Export it:  export GITHUB_TOKEN=ghp_...\n"
             "  Or add it to your .env file and re-run."
         )
@@ -40,12 +40,12 @@ def _wrap_api_error(exc: Exception, cfg: LLMConfig) -> Exception:
         return PermissionError(
             f"Authentication failed (HTTP 401/403).\n"
             f"  • Check that {cfg.api_key_env!r} is a valid GitHub token.\n"
-            "  • The token must have the 'models' (read) permission under 'GitHub Models'.\n"
+            "  • You need an active GitHub Copilot subscription (https://github.com/features/copilot).\n"
             "  • Tokens expire — generate a new one at https://github.com/settings/tokens"
         )
     if isinstance(exc, RateLimitError):
         return RuntimeError(
-            "Rate limit reached on the GitHub Models API.\n"
+            "Rate limit reached on the GitHub Copilot API.\n"
             "  • Wait a moment and try again.\n"
             "  • Free-tier accounts have per-minute request limits."
         )

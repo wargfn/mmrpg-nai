@@ -218,7 +218,7 @@ class LLMConfig(BaseModel):
     # Model name as listed on https://github.com/marketplace/models
     # Change with: mmrpg-nai config set llm.model <name>
     model: str = "gpt-5.4"
-    api_base: str = "https://models.inference.ai.azure.com"
+    api_base: str = "https://api.githubcopilot.com"
     api_key_env: str = "GITHUB_TOKEN"
     max_tokens: int = 4096
     temperature: float = 0.8
