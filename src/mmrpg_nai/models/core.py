@@ -121,7 +121,7 @@ class Character(BaseModel):
 
 class LogEntry(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    role: str  # "narrator" | "player" | "system"
+    role: str  # "narrator" | "player" | "system" | "meta"
     content: str
     metadata: dict[str, Any] = Field(default_factory=dict)
 

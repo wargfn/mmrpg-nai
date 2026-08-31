@@ -50,7 +50,7 @@ export $(grep -v '^#' .env | xargs)
 ```bash
 mmrpg-nai campaign create
 mmrpg-nai session create
-mmrpg-nai session run <session-id>
+mmrpg-nai session run
 mmrpg-nai session log <session-id>
 ```
 

@@ -223,38 +223,161 @@ def session_create(
 
 @session_app.command("run")
 def session_run(
-    session_id: str = typer.Argument(..., help="Session ID to run"),
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
     stream: bool = typer.Option(True, help="Stream responses"),
+    session_id: Optional[str] = typer.Option(None, help="Resume a specific session by ID (skips startup prompts)"),
 ) -> None:
-    """Run an interactive narration session from the command line."""
-    store = _get_store(data_dir)
-    cfg = store.load_config()
-    session = store.sessions.load(session_id)
-    if session is None:
-        console.print(f"[red]Session not found: {session_id}[/red]")
-        raise typer.Exit(1)
+    """Run an interactive narration session from the command line.
 
-    campaign = store.campaigns.load(session.campaign_id)
-    if campaign is None:
-        console.print(f"[red]Campaign not found: {session.campaign_id}[/red]")
-        raise typer.Exit(1)
+    At startup you will be asked which campaign and characters are playing.
+    The AI will then deliver a brief recap of the previous session before play begins.
 
-    party = [c for cid in campaign.character_ids if (c := store.characters.load(cid)) is not None]
-
+    During play, wrap any text in [square brackets] to send an out-of-game meta
+    direction to the Narrator without it being treated as in-world action.
+    For example: [make the next encounter harder] or [skip ahead to the boss fight].
+    """
+    import re as _re
     from mmrpg_nai.llm.narrator import Narrator
 
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+
+    # ------------------------------------------------------------------
+    # 1. Choose campaign
+    # ------------------------------------------------------------------
+    if session_id is None:
+        campaigns = store.campaigns.list_all()
+        if not campaigns:
+            console.print("[red]No campaigns found. Create one first with: mmrpg-nai campaign create[/red]")
+            raise typer.Exit(1)
+
+        console.print("\n[bold]Available campaigns:[/bold]")
+        table = Table("#", "ID", "Name", "Sessions")
+        for i, c in enumerate(campaigns, 1):
+            table.add_row(str(i), c.id[:8], c.name, str(len(c.session_ids)))
+        console.print(table)
+
+        while True:
+            raw = Prompt.ask("Enter campaign number or ID prefix")
+            campaign: Optional[Campaign] = None
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(campaigns):
+                    campaign = campaigns[idx]
+            else:
+                matches = [c for c in campaigns if c.id.startswith(raw) or c.name.lower() == raw.lower()]
+                if len(matches) == 1:
+                    campaign = matches[0]
+                elif len(matches) > 1:
+                    console.print("[yellow]Multiple matches – be more specific.[/yellow]")
+            if campaign is not None:
+                break
+            console.print("[red]Not found, try again.[/red]")
+
+        # ------------------------------------------------------------------
+        # 2. Choose characters
+        # ------------------------------------------------------------------
+        all_chars = store.characters.list_all()
+        pc_pool = [c for c in all_chars if not c.is_npc]
+        party: list[Character] = []
+
+        if pc_pool:
+            console.print("\n[bold]Available player characters:[/bold]")
+            ctable = Table("#", "ID", "Name", "Alias", "Rank")
+            for i, ch in enumerate(pc_pool, 1):
+                ctable.add_row(str(i), ch.id[:8], ch.name, ch.alias, ch.rank.value)
+            console.print(ctable)
+            console.print("[dim]Enter character numbers separated by commas (e.g. 1,3) or press Enter to use all.[/dim]")
+            raw_chars = Prompt.ask("Characters playing today", default="all")
+            if raw_chars.strip().lower() in {"", "all"}:
+                party = pc_pool
+            else:
+                selected: list[Character] = []
+                for token in raw_chars.split(","):
+                    token = token.strip()
+                    if token.isdigit():
+                        idx = int(token) - 1
+                        if 0 <= idx < len(pc_pool):
+                            selected.append(pc_pool[idx])
+                    else:
+                        matched = [c for c in pc_pool if c.id.startswith(token) or c.name.lower() == token.lower()]
+                        selected.extend(matched)
+                party = selected or pc_pool
+
+        # ------------------------------------------------------------------
+        # 3. Create a new session for this run
+        # ------------------------------------------------------------------
+        session_title = Prompt.ask("Session title", default=f"Session {len(campaign.session_ids) + 1}")
+        existing = store.sessions.find(campaign_id=campaign.id)
+        session = Session(
+            campaign_id=campaign.id,
+            title=session_title,
+            session_number=len(existing) + 1,
+            participants=[c.id for c in party],
+        )
+        store.sessions.save(session)
+        console.print(f"[green]Created session #{session.session_number}: {session.id}[/green]")
+
+        # Find the previous session for recap
+        prev_session = existing[-1] if existing else None
+
+    else:
+        # Resume by explicit session ID
+        session = store.sessions.load(session_id)
+        if session is None:
+            console.print(f"[red]Session not found: {session_id}[/red]")
+            raise typer.Exit(1)
+        campaign = store.campaigns.load(session.campaign_id)
+        if campaign is None:
+            console.print(f"[red]Campaign not found: {session.campaign_id}[/red]")
+            raise typer.Exit(1)
+        party = [c for cid in session.participants if (c := store.characters.load(cid)) is not None]
+        if not party:
+            party = [c for cid in campaign.character_ids if (c := store.characters.load(cid)) is not None]
+        prev_sessions = store.sessions.find(campaign_id=campaign.id)
+        prev_session = next(
+            (s for s in reversed(prev_sessions) if s.id != session.id),
+            None,
+        )
+
+    # ------------------------------------------------------------------
+    # 4. Start narrator
+    # ------------------------------------------------------------------
     narrator = Narrator(cfg, store)
     narrator.start_session(session, campaign, party)
 
+    party_names = ", ".join(c.name for c in party) if party else "Unknown party"
     console.print(
         Panel(
             f"[bold]Session:[/bold] {session.title}  (#{session.session_number})\n"
-            f"[bold]Campaign:[/bold] {campaign.name}",
+            f"[bold]Campaign:[/bold] {campaign.name}\n"
+            f"[bold]Party:[/bold] {party_names}",
             title="🦸 MMRPG Narrator AI",
         )
     )
-    console.print("[dim]Type your action or dialogue. Enter 'quit' or 'exit' to end the session.[/dim]\n")
+
+    # ------------------------------------------------------------------
+    # 5. AI recap of last session
+    # ------------------------------------------------------------------
+    if prev_session is not None:
+        console.print("[dim italic]Generating recap of last session…[/dim italic]")
+        try:
+            recap = narrator.recap_last_session(prev_session)
+            if recap:
+                console.print(Panel(Markdown(recap), title="[bold yellow]Previously…[/bold yellow]"))
+        except Exception as exc:
+            console.print(f"[yellow]Could not generate recap: {exc}[/yellow]")
+
+    console.print(
+        "[dim]Type your action or dialogue. "
+        "Wrap text in [square brackets] for out-of-game meta directions. "
+        "Enter 'quit' or 'exit' to end the session.[/dim]\n"
+    )
+
+    # ------------------------------------------------------------------
+    # 6. Main input loop
+    # ------------------------------------------------------------------
+    _META_RE = _re.compile(r"^\s*\[(.+)\]\s*$")
 
     while True:
         try:
@@ -268,12 +391,22 @@ def session_run(
         if not player_input.strip():
             continue
 
+        meta_match = _META_RE.match(player_input)
         console.print()
-        console.print("[bold blue]Narrator[/bold blue]")
-        try:
-            narrator.narrate(player_input, stream=stream)
-        except Exception as exc:
-            console.print(f"[red]Error: {exc}[/red]")
+
+        if meta_match:
+            direction = meta_match.group(1).strip()
+            console.print("[bold yellow]Narrator (meta)[/bold yellow]")
+            try:
+                narrator.meta_direction(direction, stream=stream)
+            except Exception as exc:
+                console.print(f"[red]Error: {exc}[/red]")
+        else:
+            console.print("[bold blue]Narrator[/bold blue]")
+            try:
+                narrator.narrate(player_input, stream=stream)
+            except Exception as exc:
+                console.print(f"[red]Error: {exc}[/red]")
         console.print()
 
     session.ended_at = datetime.now(timezone.utc)
@@ -293,9 +426,15 @@ def session_log(
         console.print(f"[red]Session not found: {session_id}[/red]")
         raise typer.Exit(1)
     for entry in session.log:
-        color = "blue" if entry.role == "narrator" else "green"
+        if entry.role == "narrator":
+            color = "blue"
+        elif entry.role == "meta":
+            color = "yellow"
+        else:
+            color = "green"
+        prefix = "(meta) " if entry.role == "meta" else ""
         ts = entry.timestamp.strftime("%H:%M:%S")
-        console.print(f"[dim]{ts}[/dim] [bold {color}]{entry.role.capitalize()}[/bold {color}]: {entry.content}\n")
+        console.print(f"[dim]{ts}[/dim] [bold {color}]{prefix}{entry.role.capitalize()}[/bold {color}]: {entry.content}\n")
 
 
 # ---------------------------------------------------------------------------
