@@ -115,6 +115,81 @@ def config_system_prompt(
         console.print(Panel(cfg.system_prompt, title="System Prompt"))
 
 
+@config_app.command("models")
+def config_models(
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+    filter_text: Optional[str] = typer.Option(None, "--filter", "-f", help="Case-insensitive substring to filter model IDs"),
+) -> None:
+    """List models available on the GitHub Models inference endpoint.
+
+    Reads your token from the environment variable configured in llm.api_key_env
+    (default: GITHUB_TOKEN) and queries the /models endpoint.  The current model
+    in use is highlighted.
+
+    After choosing a model, apply it with:
+
+        mmrpg-nai config set llm.model <model-id>
+    """
+    import os as _os
+
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+
+    api_key = _os.environ.get(cfg.llm.api_key_env, "").strip()
+    if not api_key:
+        console.print(
+            Panel(
+                f"Environment variable [bold]{cfg.llm.api_key_env!r}[/bold] is not set.\n"
+                "  1. Create a GitHub token at https://github.com/settings/tokens\n"
+                "  2. Grant it the 'models' (read) permission\n"
+                "  3. Export it:  export GITHUB_TOKEN=ghp_...",
+                title="[bold red]⚠ Token not set[/bold red]",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(1)
+
+    try:
+        from openai import OpenAI as _OpenAI
+        client = _OpenAI(base_url=cfg.llm.api_base, api_key=api_key)
+        models_response = client.models.list()
+    except Exception as exc:
+        console.print(f"[red]Failed to fetch models: {exc}[/red]")
+        console.print(f"[dim]Endpoint: {cfg.llm.api_base}[/dim]")
+        raise typer.Exit(1)
+
+    model_data = sorted(models_response.data, key=lambda m: m.id.lower())
+
+    if filter_text:
+        model_data = [m for m in model_data if filter_text.lower() in m.id.lower()]
+
+    if not model_data:
+        console.print(f"[yellow]No models found{f' matching {filter_text!r}' if filter_text else ''}.[/yellow]")
+        raise typer.Exit(0)
+
+    table = Table(
+        "Model ID",
+        "Owner / Provider",
+        "Active",
+        title=f"Models at {cfg.llm.api_base}",
+        show_lines=False,
+    )
+    for m in model_data:
+        is_active = m.id == cfg.llm.model
+        owner = getattr(m, "owned_by", "") or ""
+        table.add_row(
+            f"[bold green]{m.id}[/bold green]" if is_active else m.id,
+            owner,
+            "[bold green]✓[/bold green]" if is_active else "",
+        )
+
+    console.print(table)
+    console.print(
+        f"\n[dim]Currently active model: [bold]{cfg.llm.model}[/bold]  "
+        f"(change with: mmrpg-nai config set llm.model <id>)[/dim]"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Campaign commands
 # ---------------------------------------------------------------------------
