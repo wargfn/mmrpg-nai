@@ -43,6 +43,7 @@ _store: Store | None = None
 _active_narrators: dict[str, Narrator] = {}
 _active_narrators_lock = Lock()
 _session_locks: dict[str, Lock] = {}
+_session_create_lock = Lock()
 _META_RE = re.compile(r"^\s*\[(.+)\]\s*$")
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
@@ -155,7 +156,10 @@ def _start_narrator(
         _session_locks.setdefault(session.id, Lock())
 
     recap = ""
-    previous_sessions = store.sessions.find(campaign_id=campaign.id)
+    previous_sessions = sorted(
+        store.sessions.find(campaign_id=campaign.id),
+        key=lambda s: (s.session_number, s.started_at),
+    )
     previous = next((s for s in reversed(previous_sessions) if s.id != session.id), None)
     if previous:
         try:
@@ -223,18 +227,19 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
         if campaign is None:
             raise HTTPException(status_code=404, detail="Campaign not found")
 
-        existing = store.sessions.find(campaign_id=campaign.id)
         participants = _load_participants(store, campaign, req.participant_ids)
-        next_session_number = len(existing) + 1
-        session = Session(
-            campaign_id=campaign.id,
-            title=req.title or f"Session {next_session_number}",
-            session_number=next_session_number,
-            participants=[p.id for p in participants],
-        )
-        store.sessions.save(session)
-        campaign.session_ids.append(session.id)
-        store.campaigns.save(campaign)
+        with _session_create_lock:
+            existing = store.sessions.find(campaign_id=campaign.id)
+            next_session_number = len(existing) + 1
+            session = Session(
+                campaign_id=campaign.id,
+                title=req.title or f"Session {next_session_number}",
+                session_number=next_session_number,
+                participants=[p.id for p in participants],
+            )
+            store.sessions.save(session)
+            campaign.session_ids.append(session.id)
+            store.campaigns.save(campaign)
         _, recap = _start_narrator(store, cfg, session, campaign, participants)
     return WebSessionStartResponse(
         session=session,

@@ -206,3 +206,36 @@ def test_web_multiple_sessions_isolated(client: TestClient, monkeypatch: pytest.
     assert not any(entry["content"] == "beta" for entry in state1["session"]["log"])
     assert any(entry["content"] == "beta" for entry in state2["session"]["log"])
     assert not any(entry["content"] == "alpha" for entry in state2["session"]["log"])
+
+
+def test_web_session_end(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    class DummyNarrator:
+        def __init__(self, cfg, store):
+            self.store = store
+            self.session = None
+
+        def start_session(self, session, campaign, party, source_materials=None):
+            self.session = session
+
+        def recap_last_session(self, last_session):
+            return ""
+
+        def narrate(self, player_input: str, stream: bool = False):
+            return "ok"
+
+        def meta_direction(self, direction: str, stream: bool = False):
+            return "ok"
+
+    monkeypatch.setattr(service, "Narrator", DummyNarrator)
+    campaign = client.post("/campaigns", json={"name": "Campaign Z", "description": "D"}).json()
+    character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
+    started = client.post("/web/session/start", json={"campaign_id": campaign["id"], "participant_ids": [character["id"]]}).json()
+    session_id = started["session"]["id"]
+
+    r = client.post(f"/web/session/{session_id}/end")
+    assert r.status_code == 200
+    assert r.json() == {"ended": True}
+
+    r = client.post(f"/web/session/{session_id}/end")
+    assert r.status_code == 200
+    assert r.json() == {"ended": False}

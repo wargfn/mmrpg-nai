@@ -196,8 +196,11 @@
     });
 
     async function pollLoop() {
-      await fetchSessionState(false);
-      pollHandle = setTimeout(pollLoop, 1500);
+      try {
+        await fetchSessionState(false);
+      } finally {
+        pollHandle = setTimeout(pollLoop, 1500);
+      }
     }
 
     function startPolling() {
