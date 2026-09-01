@@ -223,24 +223,36 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
     cfg = store.load_config()
 
     if req.session_id:
-        session = store.sessions.load(req.session_id)
-        if session is None:
+        base_session = store.sessions.load(req.session_id)
+        if base_session is None:
             raise HTTPException(status_code=404, detail="Session not found")
-        campaign = store.campaigns.load(session.campaign_id)
+        campaign = store.campaigns.load(base_session.campaign_id)
         if campaign is None:
             raise HTTPException(status_code=404, detail="Campaign not found")
-        participants = _load_participants(store, campaign, session.participants)
-        user_ids = session.user_ids or campaign.user_ids
+        participants = _load_participants(store, campaign, base_session.participants)
+        user_ids = base_session.user_ids or campaign.user_ids
         users = [u for uid in user_ids if (u := store.users.load(uid)) is not None]
-        session.user_ids = [u.id for u in users]
-        store.sessions.save(session)
+        with _session_create_lock:
+            existing = store.sessions.find(campaign_id=campaign.id)
+            next_session_number = len(existing) + 1
+            session = Session(
+                campaign_id=campaign.id,
+                title=req.title or base_session.title,
+                session_number=next_session_number,
+                synopsis=base_session.synopsis,
+                log=[entry.model_copy(deep=True) for entry in base_session.log],
+                participants=[p.id for p in participants],
+                user_ids=[u.id for u in users],
+            )
+            store.sessions.save(session)
+            campaign.session_ids.append(session.id)
+            for uid in session.user_ids:
+                if uid not in campaign.user_ids:
+                    campaign.user_ids.append(uid)
+            store.campaigns.save(campaign)
         lock = _get_session_lock(session.id)
         with lock:
-            narrator = _get_active_narrator(session.id)
-            if narrator is None:
-                _, recap = _start_narrator(store, cfg, session, campaign, participants)
-            else:
-                recap = ""
+            _, recap = _start_narrator(store, cfg, session, campaign, participants)
     else:
         if not req.campaign_id:
             raise HTTPException(status_code=400, detail="campaign_id is required when starting a new session")

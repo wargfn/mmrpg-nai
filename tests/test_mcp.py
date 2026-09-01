@@ -177,9 +177,22 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
 
     resumed = client.post("/web/session/start", json={"session_id": session_id})
     assert resumed.status_code == 200
-    assert resumed.json()["session"]["id"] == session_id
-    assert resumed.json()["recap"] == ""
-    assert len(starts) == 1
+    resumed_data = resumed.json()
+    resumed_session_id = resumed_data["session"]["id"]
+    assert resumed_session_id != session_id
+    assert resumed_data["session"]["campaign_id"] == campaign["id"]
+    assert resumed_data["recap"] == "Last time..."
+    assert len(starts) == 2
+    assert len(resumed_data["session"]["log"]) >= 4
+    assert resumed_data["session"]["log"][0]["role"] == "player"
+    assert resumed_data["session"]["log"][0]["content"] == "I investigate the room."
+
+    continued = client.post(f"/web/session/{resumed_session_id}/chat", json={"message": "Continue where we left off."})
+    assert continued.status_code == 200
+    assert continued.json()["response"] == "Narrated: Continue where we left off."
+
+    touched_user_after_resume = client.get(f"/users/{user['id']}").json()
+    assert len(touched_user_after_resume["session_timestamps"]) == 2
 
 
 def test_web_multiple_sessions_isolated(client: TestClient, monkeypatch: pytest.MonkeyPatch):
