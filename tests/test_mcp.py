@@ -181,7 +181,7 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     resumed_session_id = resumed_data["session"]["id"]
     assert resumed_session_id != session_id
     assert resumed_data["session"]["campaign_id"] == campaign["id"]
-    assert resumed_data["recap"] == "Last time..."
+    assert resumed_data["recap"] == "Last time on MMRPG..."
     assert len(starts) == 2
     assert len(resumed_data["session"]["log"]) >= 4
     assert resumed_data["session"]["log"][0]["role"] == "player"
