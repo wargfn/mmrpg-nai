@@ -536,10 +536,8 @@ def session_create(
     )
     store.sessions.save(session)
     # Link session to campaign
-    campaign = store.campaigns.load(campaign_id)
-    if campaign is not None:
-        campaign.session_ids.append(session.id)
-        store.campaigns.save(campaign)
+    campaign.session_ids.append(session.id)
+    store.campaigns.save(campaign)
     console.print(f"[green]Session created: {session.id}[/green]")
 
 
