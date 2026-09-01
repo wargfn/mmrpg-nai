@@ -1,0 +1,25 @@
+{
+  "name": "Average Citizen",
+  "alias": "",
+  "rank": "rookie",
+  "tier": 1,
+  "is_npc": true,
+  "background": "Average Civilian",
+  "traits": [],
+  "abilities": {
+    "melee":      { "score": 0, "edge": 0, "defense_score": 10, "non-combat_checks": 0  },
+    "agility":    { "score": 0, "edge": 0, "defense_score": 10, "non-combat_checks": 0  },
+    "resilience": { "score": 0, "edge": 0, "defense_score": 10, "non-combat_checks": 0  },
+    "vigilance":  { "score": 0, "edge": 0, "defense_score": 10, "non-combat_checks": 0  },
+    "ego":        { "score": 0, "edge": 0, "defense_score": 10, "non-combat_checks": 0  },
+    "logic":      { "score": 0, "edge": 0, "defense_score": 10, "non-combat_checks": 0  }
+  },
+  "powers": [],
+  "health": {"score": 10, "damage_reduction": 0 },
+  "focus": {"score": 10, "damage_reduction": 0 },
+  "karma": 0,
+  "speed": {"run": 5, "climb": 3, "swim": 3, "jump": 3 },
+  "initiative_mod": 0,
+  "tags": ["average", "civilian"],
+  "equipment": []
+}
