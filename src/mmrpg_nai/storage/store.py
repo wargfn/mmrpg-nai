@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import shutil
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
@@ -40,6 +37,14 @@ class _Repo(Generic[T]):
         self._cls = model_cls
 
     def _path(self, id_: str) -> Path:
+        if (
+            not id_
+            or id_ in {".", ".."}
+            or Path(id_).name != id_
+            or "/" in id_
+            or "\\" in id_
+        ):
+            raise ValueError(f"Invalid id: {id_!r}")
         return self._dir / f"{id_}.json"
 
     def save(self, obj: T) -> T:
@@ -50,13 +55,25 @@ class _Repo(Generic[T]):
         return obj
 
     def load(self, id_: str) -> T | None:
-        p = self._path(id_)
+        try:
+            p = self._path(id_)
+        except ValueError:
+            logger.warning("Rejected invalid id: %r", id_)
+            return None
         if not p.exists():
             return None
-        return self._cls.model_validate_json(p.read_text(encoding="utf-8"))
+        try:
+            return self._cls.model_validate_json(p.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("Skipping corrupt data file %s: %s", p, exc)
+            return None
 
     def delete(self, id_: str) -> bool:
-        p = self._path(id_)
+        try:
+            p = self._path(id_)
+        except ValueError:
+            logger.warning("Rejected invalid id: %r", id_)
+            return False
         if p.exists():
             p.unlink()
             return True

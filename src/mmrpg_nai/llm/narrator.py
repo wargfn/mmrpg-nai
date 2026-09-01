@@ -107,8 +107,16 @@ class Narrator:
 
         # Replay existing log entries as conversation history
         for entry in session.log:
-            role = "assistant" if entry.role == "narrator" else "user"
-            messages.append({"role": role, "content": entry.content})
+            if entry.role == "narrator":
+                role = "assistant"
+                content = entry.content
+            elif entry.role == "meta":
+                role = "system"
+                content = f"[OUT-OF-GAME NARRATOR DIRECTION]: {entry.content}"
+            else:
+                role = "user"
+                content = entry.content
+            messages.append({"role": role, "content": content})
 
         return messages
 
@@ -140,6 +148,7 @@ class Narrator:
             response = result
         else:
             # Streaming: deliver chunks via callback
+            use_default_output = output_callback is None
             if output_callback is None:
                 def output_callback(chunk: str) -> None:
                     print(chunk, end="", flush=True)
@@ -148,7 +157,8 @@ class Narrator:
             for chunk in result:
                 output_callback(chunk)
                 chunks.append(chunk)
-            print()
+            if use_default_output:
+                print()
             response = "".join(chunks)
 
         self._messages.append({"role": "assistant", "content": response})
@@ -173,6 +183,7 @@ class Narrator:
         if isinstance(result, str):
             response = result
         else:
+            use_default_output = output_callback is None
             if output_callback is None:
                 def output_callback(chunk: str) -> None:
                     print(chunk, end="", flush=True)
@@ -181,7 +192,8 @@ class Narrator:
             for chunk in result:
                 output_callback(chunk)
                 chunks.append(chunk)
-            print()
+            if use_default_output:
+                print()
             response = "".join(chunks)
 
         self._messages.append({"role": "assistant", "content": response})

@@ -89,7 +89,7 @@ class LLMClient:
         kwargs: dict = dict(
             model=self.cfg.model,
             messages=messages,
-            max_completion_tokens=self.cfg.max_tokens,
+            max_tokens=self.cfg.max_tokens,
             temperature=self.cfg.temperature,
             stream=stream,
         )

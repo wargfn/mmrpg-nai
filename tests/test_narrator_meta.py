@@ -273,3 +273,48 @@ def test_summarise_campaign_progress_calls_llm(cfg, store, session, campaign, ch
     result = narrator.summarise_campaign_progress(campaign, [session])
     assert result == "LLM response"
     narrator.llm.complete.assert_called()
+
+
+def test_resume_log_replays_meta_as_system(cfg, store, campaign, character):
+    session = Session(campaign_id=campaign.id, title="Session 1")
+    session.log.append(LogEntry(role="meta", content="keep this PG-13"))
+    narrator = _make_narrator(cfg, store, session, campaign, [character])
+    replayed = [m for m in narrator._messages if m["role"] == "system" and "OUT-OF-GAME" in m["content"]]
+    assert len(replayed) == 1
+    assert "keep this PG-13" in replayed[0]["content"]
+
+
+def test_stream_callback_does_not_force_newline(cfg, store, session, campaign, character):
+    narrator = _make_narrator(cfg, store, session, campaign, [character])
+
+    def _stream():
+        yield "Hello"
+        yield " world"
+
+    narrator.llm.complete.return_value = _stream()
+    chunks: list[str] = []
+
+    with patch("builtins.print") as mock_print:
+        response = narrator.narrate("say hi", stream=True, output_callback=chunks.append)
+
+    assert response == "Hello world"
+    assert chunks == ["Hello", " world"]
+    mock_print.assert_not_called()
+
+
+def test_meta_stream_callback_does_not_force_newline(cfg, store, session, campaign, character):
+    narrator = _make_narrator(cfg, store, session, campaign, [character])
+
+    def _stream():
+        yield "Meta"
+        yield " response"
+
+    narrator.llm.complete.return_value = _stream()
+    chunks: list[str] = []
+
+    with patch("builtins.print") as mock_print:
+        response = narrator.meta_direction("change pacing", stream=True, output_callback=chunks.append)
+
+    assert response == "Meta response"
+    assert chunks == ["Meta", " response"]
+    mock_print.assert_not_called()

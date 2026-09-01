@@ -88,7 +88,6 @@ def test_session_create_links_to_campaign(store: Store):
     """Creating a session via session_create should register its ID on the campaign."""
     from typer.testing import CliRunner
     from mmrpg_nai.cli.main import app
-    import os
 
     campaign = Campaign(name="Link Test Campaign")
     store.campaigns.save(campaign)
@@ -360,3 +359,14 @@ def test_session_add_remove_character(store: Store):
 
     reloaded2 = store.sessions.load(session.id)
     assert char.id not in reloaded2.participants
+
+
+def test_load_corrupt_json_returns_none(store: Store):
+    bad = store.base_dir / "campaigns" / "bad.json"
+    bad.write_text("{not-json", encoding="utf-8")
+    assert store.campaigns.load("bad") is None
+
+
+def test_invalid_id_does_not_traverse(store: Store):
+    assert store.campaigns.load("../outside") is None
+    assert store.campaigns.delete("../outside") is False

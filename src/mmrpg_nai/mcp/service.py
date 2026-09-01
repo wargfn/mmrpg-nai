@@ -7,10 +7,8 @@ Exposes MMRPG data as REST endpoints that can be consumed by other tools
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 
 from mmrpg_nai.models.core import (
     Adventure,
@@ -28,7 +26,7 @@ app = FastAPI(
     title="MMRPG Narrator AI – MCP Service",
     description=(
         "Model Context Protocol service for Marvel Multiverse RPG Narrator AI. "
-        "Provides CRUD access to campaigns, sessions, characters, equipment, "
+        "Provides REST access to campaigns, sessions, characters, equipment, "
         "power sets, adventures, and source materials."
     ),
     version="0.1.0",

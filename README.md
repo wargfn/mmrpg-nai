@@ -112,7 +112,7 @@ mmrpg-nai config set llm.max_tokens 8192
 mmrpg-nai config set llm.api_base https://api.githubcopilot.com
 
 # Narrator settings
-mmrpg-nai config set narrator.max_source_chars 40000   # max PDF text injected per session (0 = disabled)
+mmrpg-nai config set max_source_chars 40000   # max PDF text injected per session (0 = disabled)
 ```
 
 #### `config system-prompt`
@@ -185,10 +185,10 @@ mmrpg-nai campaign remove-source <campaign-id> <source-material-id>
 
 #### `campaign add-enemy <campaign-id> <character-id>`
 Add an enemy/antagonist stat-block to the campaign's enemy roster.
-The character must already exist (create it with `character create` — use `--is-npc` flag).
+The character must already exist (import a JSON stat-block with `character import`).
 ```bash
-# Create the villain character first
-mmrpg-nai character create --name "Doctor Doom" --alias "Victor von Doom" --is-npc
+# Import the villain character first
+mmrpg-nai character import ./doctor_doom.json
 
 # Then add to campaign roster
 mmrpg-nai campaign add-enemy <campaign-id> <character-id>
@@ -615,7 +615,7 @@ mmrpg-nai config set llm.max_tokens 4096
 | `llm.temperature` | `0.8` | Sampling temperature (0 = deterministic, 1 = creative) |
 | `llm.max_tokens` | `4096` | Maximum tokens in each LLM response |
 | `narrator.system_prompt` | *(built-in)* | Main narrator system prompt (replace with `config system-prompt`) |
-| `narrator.max_source_chars` | `20000` | Max characters of PDF source material injected per session; set to `0` to disable |
+| `max_source_chars` | `20000` | Max characters of PDF source material injected per session; set to `0` to disable |
 | `narrator.extra_prompts` | `{}` | Named extra prompt sections appended to every system prompt |
 
 ### Source material injection
@@ -636,10 +636,10 @@ mmrpg-nai pdf list
 mmrpg-nai campaign add-source <campaign-id> <source-material-id>
 
 # 3. Control how much text is injected (default 20 000 chars ≈ 10-15 rulebook pages)
-mmrpg-nai config set narrator.max_source_chars 40000
+mmrpg-nai config set max_source_chars 40000
 
 # 4. Disable injection entirely
-mmrpg-nai config set narrator.max_source_chars 0
+mmrpg-nai config set max_source_chars 0
 ```
 
 The startup panel shows which source materials are loaded for each session:

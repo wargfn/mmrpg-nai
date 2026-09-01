@@ -37,28 +37,30 @@ def ingest_pdf(
 
     full_text = "\n".join(pages)
 
-    # Save extracted text next to the PDF reference
-    text_dir = store.base_dir / "source_materials"
-    text_dir.mkdir(parents=True, exist_ok=True)
-    text_path = text_dir / (path.stem + ".txt")
-    text_path.write_text(full_text, encoding="utf-8")
-
     material = SourceMaterial(
         title=title,
         file_path=str(path),
         description=description,
         categories=categories,
         page_count=len(pages),
-        extracted_text_path=str(text_path),
     )
+    # Save extracted text next to the PDF reference
+    text_dir = store.base_dir / "source_materials"
+    text_dir.mkdir(parents=True, exist_ok=True)
+    text_path = text_dir / f"{path.stem}-{material.id}.txt"
+    text_path.write_text(full_text, encoding="utf-8")
+    material.extracted_text_path = str(text_path)
     store.source_materials.save(material)
     return material
 
 
 def load_source_text(material: SourceMaterial, max_chars: int = 50_000) -> str:
     """Load the extracted text of a source material (truncated to *max_chars*)."""
-    p = Path(material.extracted_text_path)
-    if not p.exists():
+    extracted_text_path = material.extracted_text_path.strip()
+    if not extracted_text_path:
+        return ""
+    p = Path(extracted_text_path)
+    if not p.exists() or p.is_dir():
         return ""
     text = p.read_text(encoding="utf-8", errors="replace")
     return text[:max_chars]
