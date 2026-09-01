@@ -308,28 +308,57 @@ mmrpg-nai character show <character-id>
 ```
 
 **Character JSON format:**
+
+All fields are optional except `name`. Use the simple form or the extended form for any field.
+
 ```json
 {
-  "name": "Spider-Man",
-  "alias": "Peter Parker",
-  "rank": "veteran",
-  "tier": 2,
+  "name": "Matthias",
+  "alias": "Matthias",
+  "rank": "rookie",
+  "tier": 1,
   "is_npc": false,
-  "background": "Bitten by a radioactive spider at Oscorp.",
-  "traits": ["Friendly Neighborhood Hero"],
+  "background": "A mutant-associate trying to find his place in New York.",
+  "traits": ["Combat Reflexes", "Connections:Outsiders", "Fresh Eyes", "Stranger"],
   "abilities": {
-    "melee":      { "score": 4, "edge": 1 },
-    "agility":    { "score": 6, "edge": 2 },
-    "resilience": { "score": 4, "edge": 0 },
-    "vigilance":  { "score": 4, "edge": 1 },
-    "ego":        { "score": 3, "edge": 0 },
-    "logic":      { "score": 4, "edge": 1 }
+    "melee":      { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 2 },
+    "agility":    { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 1 },
+    "resilience": { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 1 },
+    "vigilance":  { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 1 },
+    "ego":        { "score": 0, "edge": 0, "defense_score": 10, "non-combat_checks": 0 },
+    "logic":      { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 1 }
   },
-  "health": 8,
-  "focus": 6,
-  "karma": 5
+  "powers": [
+    "Attack Stance Standard",
+    "Healing Factor 1 Health",
+    "Mighty 1",
+    "Sturdy 1"
+  ],
+  "health": { "score": 30, "damage_reduction": -1 },
+  "focus":  { "score": 30, "damage_reduction": -1 },
+  "karma": 5,
+  "speed": { "run": 5, "climb": 3, "swim": 3, "jump": 3 },
+  "initiative_mod": 1,
+  "tags": ["hounded", "mutant-associate"],
+  "equipment": ["baton"]
 }
 ```
+
+**Field reference:**
+
+| Field | Type | Description |
+|---|---|---|
+| `rank` | string | `basic` `rookie` `veteran` `champion` `master` `legendary` |
+| `tier` | int | Character tier (1–5) |
+| `abilities.*` | object | Each ability has `score`, `edge`, optional `defense_score` (10+score+edge), `non-combat_checks` |
+| `powers` | string array | Inline power/ability names (e.g. `"Mighty 1"`) |
+| `power_sets` | string array | IDs of full `PowerSet` records (from `powerset import`) |
+| `health` | int or `{"score": N, "damage_reduction": N}` | DR negative = extra damage taken |
+| `focus` | int or `{"score": N, "damage_reduction": N}` | Same as health |
+| `speed` | object | `run`, `climb`, `swim`, `jump` (squares per turn) |
+| `initiative_mod` | int | Added to initiative rolls |
+| `equipment` | string array | Inline item names or Equipment IDs |
+| `is_npc` | bool | `true` for enemies/NPCs; `false` for player characters |
 
 ---
 

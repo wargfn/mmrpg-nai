@@ -429,7 +429,8 @@ def campaign_enemies(
         if e is None:
             table.add_row(eid[:8], "[dim]<deleted>[/dim]", "", "", "", "")
         else:
-            table.add_row(e.id[:8], e.name, e.alias, e.rank.value, str(e.tier), str(e.health))
+            hp = e.health.score if hasattr(e.health, "score") else e.health
+            table.add_row(e.id[:8], e.name, e.alias, e.rank.value, str(e.tier), str(hp))
     console.print(table)
 
 
@@ -754,9 +755,10 @@ def character_list(
     if not chars:
         console.print("[yellow]No characters found.[/yellow]")
         return
-    table = Table("ID", "Name", "Alias", "Rank", "Tier", "NPC")
+    table = Table("ID", "Name", "Alias", "Rank", "Tier", "HP", "NPC")
     for c in chars:
-        table.add_row(c.id[:8], c.name, c.alias, c.rank.value, str(c.tier), str(c.is_npc))
+        hp = c.health.score if hasattr(c.health, "score") else c.health
+        table.add_row(c.id[:8], c.name, c.alias, c.rank.value, str(c.tier), str(hp), str(c.is_npc))
     console.print(table)
 
 

@@ -26,6 +26,10 @@ class Rank(str, Enum):
 class AbilityScore(BaseModel):
     score: int = 0
     edge: int = 0
+    defense_score: int = Field(default=10, description="10 + score + edge")
+    non_combat_checks: int = Field(default=0, alias="non-combat_checks", description="Score + edge for non-combat checks")
+
+    model_config = {"populate_by_name": True}
 
 
 class Abilities(BaseModel):
@@ -35,6 +39,19 @@ class Abilities(BaseModel):
     vigilance: AbilityScore = Field(default_factory=AbilityScore)
     ego: AbilityScore = Field(default_factory=AbilityScore)
     logic: AbilityScore = Field(default_factory=AbilityScore)
+
+
+class ResourcePool(BaseModel):
+    """A scored resource (health, focus) with optional damage reduction."""
+    score: int = 0
+    damage_reduction: int = Field(default=0, description="Negative means extra damage taken; positive means DR")
+
+
+class Speed(BaseModel):
+    run: int = 4
+    climb: int = 2
+    swim: int = 2
+    jump: int = 2
 
 
 # ---------------------------------------------------------------------------
@@ -100,13 +117,19 @@ class Character(BaseModel):
     rank: Rank = Rank.BASIC
     tier: int = 1
     abilities: Abilities = Field(default_factory=Abilities)
-    health: int = 10
-    focus: int = 10
+    # Health and Focus accept either a plain int (legacy) or a ResourcePool object
+    health: int | ResourcePool = Field(default=10)
+    focus: int | ResourcePool = Field(default=10)
     karma: int = 0
     traits: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    # Inline power names (e.g. "Healing Factor 1 Health").
+    # Distinct from power_sets (which are IDs referencing full PowerSet records).
+    powers: list[str] = Field(default_factory=list, description="Inline power/ability names")
     power_sets: list[str] = Field(default_factory=list, description="Power set IDs")
-    equipment: list[str] = Field(default_factory=list, description="Equipment IDs")
+    equipment: list[str] = Field(default_factory=list, description="Equipment IDs or inline item names")
+    speed: Speed = Field(default_factory=Speed)
+    initiative_mod: int = Field(default=0, description="Modifier added to initiative rolls")
     background: str = ""
     notes: str = ""
     is_npc: bool = False
