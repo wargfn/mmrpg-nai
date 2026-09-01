@@ -97,6 +97,12 @@ class WebSessionStateResponse(BaseModel):
     is_active: bool
 
 
+class UserWriteRequest(BaseModel):
+    name: str
+    email: str = ""
+    notes: str = ""
+
+
 def get_store() -> Store:
     if _store is None:
         raise RuntimeError("Store not initialised – call init_app() first.")
@@ -126,18 +132,7 @@ def _get_active_narrator(session_id: str) -> Narrator | None:
         return _active_narrators.get(session_id)
 
 
-def _touch_users_for_session(store: Store, user_ids: list[str]) -> None:
-    if not user_ids:
-        return
-    now = datetime.now(timezone.utc)
-    for uid in dict.fromkeys(user_ids):
-        user = store.users.load(uid)
-        if user is None:
-            continue
-        user.last_login_at = now
-        user.session_timestamps.append(now)
-        user.updated_at = now
-        store.users.save(user)
+
 
 
 def _load_participants(store: Store, campaign: Campaign, participant_ids: list[str]) -> list[Character]:
@@ -272,7 +267,7 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
                     campaign.user_ids.append(uid)
             store.campaigns.save(campaign)
         _, recap = _start_narrator(store, cfg, session, campaign, participants)
-    _touch_users_for_session(store, session.user_ids)
+    store.touch_users_for_session(session.user_ids)
     return WebSessionStartResponse(
         session=session,
         campaign=campaign,
@@ -352,28 +347,36 @@ def list_users() -> list[User]:
     return get_store().users.list_all()
 
 
-@app.get("/users/{id}", response_model=User, tags=["users"])
-def get_user(id: str) -> User:
-    obj = get_store().users.load(id)
+@app.get("/users/{user_id}", response_model=User, tags=["users"])
+def get_user(user_id: str) -> User:
+    obj = get_store().users.load(user_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="User not found")
     return obj
 
 
 @app.post("/users", response_model=User, status_code=201, tags=["users"])
-def create_user(user: User) -> User:
-    return get_store().users.save(user)
+def create_user(user: UserWriteRequest) -> User:
+    new_user = User(name=user.name, email=user.email, notes=user.notes)
+    return get_store().users.save(new_user)
 
 
-@app.put("/users/{id}", response_model=User, tags=["users"])
-def update_user(id: str, user: User) -> User:
-    user = user.model_copy(update={"id": id, "updated_at": datetime.now(timezone.utc)})
-    return get_store().users.save(user)
+@app.put("/users/{user_id}", response_model=User, tags=["users"])
+def update_user(user_id: str, user: UserWriteRequest) -> User:
+    store = get_store()
+    existing = store.users.load(user_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    existing.name = user.name
+    existing.email = user.email
+    existing.notes = user.notes
+    existing.updated_at = datetime.now(timezone.utc)
+    return store.users.save(existing)
 
 
-@app.delete("/users/{id}", tags=["users"])
-def delete_user(id: str) -> dict[str, bool]:
-    return {"deleted": get_store().users.delete(id)}
+@app.delete("/users/{user_id}", tags=["users"])
+def delete_user(user_id: str) -> dict[str, bool]:
+    return {"deleted": get_store().users.delete(user_id)}
 
 
 # ---------------------------------------------------------------------------

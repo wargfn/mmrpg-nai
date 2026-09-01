@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
@@ -146,3 +147,16 @@ class Store:
 
     def append_log(self, session: Session) -> Session:
         return self.sessions.save(session)
+
+    def touch_users_for_session(self, user_ids: list[str]) -> None:
+        if not user_ids:
+            return
+        now = datetime.now(timezone.utc)
+        for uid in dict.fromkeys(user_ids):
+            user = self.users.load(uid)
+            if user is None:
+                continue
+            user.last_login_at = now
+            user.session_timestamps.append(now)
+            user.updated_at = now
+            self.users.save(user)

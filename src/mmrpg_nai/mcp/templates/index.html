@@ -300,14 +300,15 @@
     async function updateUser() {
       const id = userSelectEl.value;
       if (!id) return;
-      const current = cachedUsers.find((u) => u.id === id);
-      if (!current) return;
       const payload = {
-        ...current,
-        name: userNameEl.value.trim() || current.name,
+        name: userNameEl.value.trim(),
         email: userEmailEl.value.trim(),
         notes: userNotesEl.value.trim(),
       };
+      if (!payload.name) {
+        appendLine("System", "User name is required", "sys");
+        return;
+      }
       const r = await fetch(`/users/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

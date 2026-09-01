@@ -279,7 +279,7 @@ def test_user_crud(client: TestClient):
 
     r = client.put(
         f"/users/{uid}",
-        json={**user, "name": "James Howlett", "email": "james@example.com"},
+        json={"name": "James Howlett", "email": "james@example.com", "notes": "Updated"},
     )
     assert r.status_code == 200
     assert r.json()["name"] == "James Howlett"

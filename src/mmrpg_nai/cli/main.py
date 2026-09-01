@@ -72,20 +72,6 @@ def _mask_token(token: str) -> str:
     return f"{token[:4]}{'*' * (len(token) - 8)}{token[-4:]}"
 
 
-def _touch_users_for_session(store: Store, user_ids: list[str]) -> None:
-    if not user_ids:
-        return
-    now = datetime.now(timezone.utc)
-    for uid in dict.fromkeys(user_ids):
-        user = store.users.load(uid)
-        if user is None:
-            continue
-        user.last_login_at = now
-        user.session_timestamps.append(now)
-        user.updated_at = now
-        store.users.save(user)
-
-
 def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
     users = store.users.list_all()
     if not users:
@@ -98,25 +84,29 @@ def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
     console.print(table)
     default_ids = campaign.user_ids or [u.id for u in users]
     console.print("[dim]Enter user numbers/IDs separated by commas, or Enter for defaults.[/dim]")
-    raw = Prompt.ask("Players in this session", default="default")
-    if raw.strip().lower() in {"", "default", "all"}:
-        return [u for uid in default_ids if (u := store.users.load(uid)) is not None] or users
-    selected: list[User] = []
-    for token in raw.split(","):
-        token = token.strip()
-        if not token:
-            continue
-        if token.isdigit():
-            idx = int(token) - 1
-            if 0 <= idx < len(users):
-                selected.append(users[idx])
-        else:
-            matched = [u for u in users if u.id.startswith(token) or u.name.lower() == token.lower()]
-            selected.extend(matched)
-    dedup: dict[str, User] = {}
-    for u in selected:
-        dedup[u.id] = u
-    return list(dedup.values()) or users
+    while True:
+        raw = Prompt.ask("Players in this session", default="default")
+        if raw.strip().lower() in {"", "default", "all"}:
+            return [u for uid in default_ids if (u := store.users.load(uid)) is not None] or users
+        selected: list[User] = []
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if token.isdigit():
+                idx = int(token) - 1
+                if 0 <= idx < len(users):
+                    selected.append(users[idx])
+            else:
+                matched = [u for u in users if u.id.startswith(token) or u.name.lower() == token.lower()]
+                selected.extend(matched)
+        dedup: dict[str, User] = {}
+        for u in selected:
+            dedup[u.id] = u
+        selected_users = list(dedup.values())
+        if selected_users:
+            return selected_users
+        console.print("[red]No matching users found. Try again.[/red]")
 
 
 # ---------------------------------------------------------------------------
@@ -906,7 +896,7 @@ def session_run(
 
     narrator = Narrator(cfg, store)
     narrator.start_session(session, campaign, party, source_materials=source_materials)
-    _touch_users_for_session(store, session.user_ids)
+    store.touch_users_for_session(session.user_ids)
 
     party_names = ", ".join(c.name for c in party) if party else "Unknown party"
     session_user_names = ", ".join(
