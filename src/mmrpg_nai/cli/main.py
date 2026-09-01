@@ -141,7 +141,7 @@ def config_models(
                 f"Environment variable [bold]{cfg.llm.api_key_env!r}[/bold] is not set.\n"
                 "  1. Create a GitHub token at https://github.com/settings/tokens\n"
                 "  2. Enable GitHub Copilot on your account (https://github.com/features/copilot)\n"
-                "  3. Export it:  export GITHUB_TOKEN=ghp_...",
+                f"  3. Export it:  export {cfg.llm.api_key_env}=ghp_...",
                 title="[bold red]⚠ Token not set[/bold red]",
                 border_style="red",
             )
@@ -526,6 +526,8 @@ def session_create(
 ) -> None:
     """Create a new session."""
     store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    campaign_id = campaign.id
     existing = store.sessions.find(campaign_id=campaign_id)
     session = Session(
         campaign_id=campaign_id,

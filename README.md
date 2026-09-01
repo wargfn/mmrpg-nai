@@ -614,9 +614,9 @@ mmrpg-nai config set llm.max_tokens 4096
 | `llm.api_key_env` | `GITHUB_TOKEN` | Environment variable holding the API key |
 | `llm.temperature` | `0.8` | Sampling temperature (0 = deterministic, 1 = creative) |
 | `llm.max_tokens` | `4096` | Maximum tokens in each LLM response |
-| `narrator.system_prompt` | *(built-in)* | Main narrator system prompt (replace with `config system-prompt`) |
+| `system_prompt` | *(built-in)* | Main narrator system prompt (replace with `config system-prompt`) |
 | `max_source_chars` | `20000` | Max characters of PDF source material injected per session; set to `0` to disable |
-| `narrator.extra_prompts` | `{}` | Named extra prompt sections appended to every system prompt |
+| `extra_prompts` | `{}` | Named extra prompt sections appended to every system prompt |
 
 ### Source material injection
 

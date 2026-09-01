@@ -214,6 +214,8 @@ class Narrator:
             for entry in last_session.log:
                 if entry.role in ("player", "narrator"):
                     lines.append(f"{entry.role.capitalize()}: {entry.content}")
+            if not lines:
+                return ""
             raw = "\n".join(lines[-60:])  # last 60 exchanges max
 
         messages = [

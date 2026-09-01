@@ -28,7 +28,7 @@ def _build_client(cfg: LLMConfig) -> OpenAI:
             f"Environment variable {cfg.api_key_env!r} is not set or is empty.\n"
             "  1. Create a GitHub Personal Access Token at https://github.com/settings/tokens\n"
             "  2. Enable GitHub Copilot on your account (https://github.com/features/copilot)\n"
-            "  3. Export it:  export GITHUB_TOKEN=ghp_...\n"
+            f"  3. Export it:  export {cfg.api_key_env}=ghp_...\n"
             "  Or add it to your .env file and re-run."
         )
     return OpenAI(base_url=cfg.api_base, api_key=api_key)
