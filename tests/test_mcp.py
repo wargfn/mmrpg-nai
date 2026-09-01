@@ -91,7 +91,7 @@ def test_web_index(client: TestClient):
 
 def test_web_bootstrap(client: TestClient):
     client.post("/campaigns", json={"name": "Web Campaign", "description": "Demo"})
-    client.post("/users", json={"name": "Alice", "email": "a@example.com"})
+    client.post("/users", json={"first_name": "Alice", "email": "a@example.com"})
     r = client.get("/web/bootstrap")
     assert r.status_code == 200
     data = r.json()
@@ -135,7 +135,7 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
 
     campaign = client.post("/campaigns", json={"name": "Campaign 1", "description": "D"}).json()
     character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
-    user = client.post("/users", json={"name": "Player One", "email": "p1@example.com"}).json()
+    user = client.post("/users", json={"first_name": "Player", "last_name": "One", "email": "p1@example.com"}).json()
 
     r = client.post(
         "/web/session/start",
@@ -204,7 +204,7 @@ def test_web_multiple_sessions_isolated(client: TestClient, monkeypatch: pytest.
     monkeypatch.setattr(service, "Narrator", DummyNarrator)
     campaign = client.post("/campaigns", json={"name": "Campaign A", "description": "D"}).json()
     character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
-    user = client.post("/users", json={"name": "Player", "email": "p@example.com"}).json()
+    user = client.post("/users", json={"first_name": "Player", "email": "p@example.com"}).json()
 
     s1 = client.post(
         "/web/session/start",
@@ -251,7 +251,7 @@ def test_web_session_end(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(service, "Narrator", DummyNarrator)
     campaign = client.post("/campaigns", json={"name": "Campaign Z", "description": "D"}).json()
     character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
-    user = client.post("/users", json={"name": "Player", "email": "p@example.com"}).json()
+    user = client.post("/users", json={"first_name": "Player", "email": "p@example.com"}).json()
     started = client.post(
         "/web/session/start",
         json={"campaign_id": campaign["id"], "participant_ids": [character["id"]], "user_ids": [user["id"]]},
@@ -268,7 +268,7 @@ def test_web_session_end(client: TestClient, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_user_crud(client: TestClient):
-    r = client.post("/users", json={"name": "Logan", "email": "logan@example.com", "notes": "Wolverine"})
+    r = client.post("/users", json={"first_name": "Logan", "email": "logan@example.com", "notes": "Wolverine"})
     assert r.status_code == 201
     user = r.json()
     uid = user["id"]
@@ -279,10 +279,11 @@ def test_user_crud(client: TestClient):
 
     r = client.put(
         f"/users/{uid}",
-        json={"name": "James Howlett", "email": "james@example.com", "notes": "Updated"},
+        json={"first_name": "James", "last_name": "Howlett", "email": "james@example.com", "notes": "Updated"},
     )
     assert r.status_code == 200
-    assert r.json()["name"] == "James Howlett"
+    assert r.json()["first_name"] == "James"
+    assert r.json()["last_name"] == "Howlett"
 
     r = client.delete(f"/users/{uid}")
     assert r.status_code == 200

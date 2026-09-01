@@ -79,7 +79,7 @@ def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
     table = Table("#", "ID", "Name", "Email", "Last Login")
     for i, user in enumerate(users, 1):
         last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
-        table.add_row(str(i), user.id[:8], user.name, user.email or "—", last_login)
+        table.add_row(str(i), user.id[:8], user.display_name, user.email or "—", last_login)
     console.print("\n[bold]Available players/users:[/bold]")
     console.print(table)
     default_ids = campaign.user_ids or [u.id for u in users]
@@ -98,7 +98,7 @@ def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
                 if 0 <= idx < len(users):
                     selected.append(users[idx])
             else:
-                matched = [u for u in users if u.id.startswith(token) or u.name.lower() == token.lower()]
+                matched = [u for u in users if u.id.startswith(token) or u.display_name.lower() == token.lower()]
                 selected.extend(matched)
         dedup: dict[str, User] = {}
         for u in selected:
@@ -561,11 +561,11 @@ def campaign_add_user(
     campaign = _load_campaign_or_exit(store, campaign_id)
     user = _load_by_prefix_or_exact(store.users, user_id, "User")
     if user.id in campaign.user_ids:
-        console.print(f"[yellow]{user.name!r} is already in this campaign.[/yellow]")
+        console.print(f"[yellow]{user.display_name!r} is already in this campaign.[/yellow]")
         return
     campaign.user_ids.append(user.id)
     store.campaigns.save(campaign)
-    console.print(f"[green]Added user {user.name!r} to campaign {campaign.name!r}.[/green]")
+    console.print(f"[green]Added user {user.display_name!r} to campaign {campaign.name!r}.[/green]")
 
 
 @campaign_app.command("remove-user")
@@ -579,11 +579,11 @@ def campaign_remove_user(
     campaign = _load_campaign_or_exit(store, campaign_id)
     user = _load_by_prefix_or_exact(store.users, user_id, "User")
     if user.id not in campaign.user_ids:
-        console.print(f"[yellow]{user.name!r} is not in this campaign.[/yellow]")
+        console.print(f"[yellow]{user.display_name!r} is not in this campaign.[/yellow]")
         return
     campaign.user_ids.remove(user.id)
     store.campaigns.save(campaign)
-    console.print(f"[green]Removed user {user.name!r} from campaign {campaign.name!r}.[/green]")
+    console.print(f"[green]Removed user {user.display_name!r} from campaign {campaign.name!r}.[/green]")
 
 
 @campaign_app.command("users")
@@ -604,7 +604,7 @@ def campaign_users(
             table.add_row(uid[:8], "[dim]<deleted>[/dim]", "", "")
             continue
         last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
-        table.add_row(user.id[:8], user.name, user.email or "—", last_login)
+        table.add_row(user.id[:8], user.display_name, user.email or "—", last_login)
     console.print(table)
 
 
@@ -726,7 +726,7 @@ def session_add_user(
     session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
     user = _load_by_prefix_or_exact(store.users, user_id, "User")
     if user.id in session.user_ids:
-        console.print(f"[yellow]{user.name!r} is already a participant in this session.[/yellow]")
+        console.print(f"[yellow]{user.display_name!r} is already a participant in this session.[/yellow]")
         return
     session.user_ids.append(user.id)
     store.sessions.save(session)
@@ -734,7 +734,7 @@ def session_add_user(
     if campaign and user.id not in campaign.user_ids:
         campaign.user_ids.append(user.id)
         store.campaigns.save(campaign)
-    console.print(f"[green]Added user {user.name!r} to session '{session.title}'.[/green]")
+    console.print(f"[green]Added user {user.display_name!r} to session '{session.title}'.[/green]")
 
 
 @session_app.command("remove-user")
@@ -748,11 +748,11 @@ def session_remove_user(
     session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
     user = _load_by_prefix_or_exact(store.users, user_id, "User")
     if user.id not in session.user_ids:
-        console.print(f"[yellow]{user.name!r} is not a participant in this session.[/yellow]")
+        console.print(f"[yellow]{user.display_name!r} is not a participant in this session.[/yellow]")
         return
     session.user_ids.remove(user.id)
     store.sessions.save(session)
-    console.print(f"[green]Removed user {user.name!r} from session '{session.title}'.[/green]")
+    console.print(f"[green]Removed user {user.display_name!r} from session '{session.title}'.[/green]")
 
 
 @session_app.command("run")
@@ -900,7 +900,7 @@ def session_run(
 
     party_names = ", ".join(c.name for c in party) if party else "Unknown party"
     session_user_names = ", ".join(
-        user.name for uid in session.user_ids if (user := store.users.load(uid)) is not None
+        user.display_name for uid in session.user_ids if (user := store.users.load(uid)) is not None
     ) or "—"
     sources_line = (
         f"\n[bold]Source Materials:[/bold] {', '.join(m.title for m in source_materials)}"
@@ -1043,20 +1043,25 @@ def user_list(data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DA
     table = Table("ID", "Name", "Email", "Last Login", "Sessions")
     for user in users:
         last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
-        table.add_row(user.id[:8], user.name, user.email or "—", last_login, str(len(user.session_timestamps)))
+        table.add_row(user.id[:8], user.display_name, user.email or "—", last_login, str(len(user.session_timestamps)))
     console.print(table)
 
 
 @user_app.command("create")
 def user_create(
-    name: str = typer.Option(..., prompt=True),
+    first_name: str = typer.Option(..., prompt=True),
+    last_name: str = typer.Option("", prompt=True),
     email: str = typer.Option("", prompt=True),
     notes: str = typer.Option("", prompt=True),
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
 ) -> None:
     """Create a user/player."""
     store = _get_store(data_dir)
-    user = User(name=name, email=email, notes=notes)
+    clean_first = first_name.strip()
+    if not clean_first:
+        console.print("[red]first_name is required.[/red]")
+        raise typer.Exit(1)
+    user = User(first_name=clean_first, last_name=last_name.strip(), email=email.strip(), notes=notes)
     store.users.save(user)
     console.print(f"[green]User created: {user.id}[/green]")
 
@@ -1071,20 +1076,23 @@ def user_show(
     user = _load_by_prefix_or_exact(store.users, user_id, "User")
     last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
     info = (
-        f"[bold]Name:[/bold]       {user.name}\n"
+        f"[bold]Name:[/bold]       {user.display_name}\n"
         f"[bold]ID:[/bold]         {user.id}\n"
+        f"[bold]First Name:[/bold] {user.first_name}\n"
+        f"[bold]Last Name:[/bold]  {user.last_name or '—'}\n"
         f"[bold]Email:[/bold]      {user.email or '—'}\n"
         f"[bold]Last Login:[/bold] {last_login}\n"
         f"[bold]Sessions:[/bold]   {len(user.session_timestamps)}\n"
         f"[bold]Notes:[/bold]      {user.notes or '—'}"
     )
-    console.print(Panel(info, title=f"👤 {user.name}", expand=False))
+    console.print(Panel(info, title=f"👤 {user.display_name}", expand=False))
 
 
 @user_app.command("update")
 def user_update(
     user_id: str = typer.Argument(..., help="User ID or prefix"),
-    name: Optional[str] = typer.Option(None),
+    first_name: Optional[str] = typer.Option(None),
+    last_name: Optional[str] = typer.Option(None),
     email: Optional[str] = typer.Option(None),
     notes: Optional[str] = typer.Option(None),
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
@@ -1092,15 +1100,21 @@ def user_update(
     """Update a user/player."""
     store = _get_store(data_dir)
     user = _load_by_prefix_or_exact(store.users, user_id, "User")
-    if name is not None:
-        user.name = name
+    if first_name is not None:
+        clean_first = first_name.strip()
+        if not clean_first:
+            console.print("[red]first_name cannot be empty.[/red]")
+            raise typer.Exit(1)
+        user.first_name = clean_first
+    if last_name is not None:
+        user.last_name = last_name.strip()
     if email is not None:
-        user.email = email
+        user.email = email.strip()
     if notes is not None:
         user.notes = notes
     user.updated_at = datetime.now(timezone.utc)
     store.users.save(user)
-    console.print(f"[green]Updated user: {user.name} ({user.id[:8]})[/green]")
+    console.print(f"[green]Updated user: {user.display_name} ({user.id[:8]})[/green]")
 
 
 @user_app.command("delete")
@@ -1114,7 +1128,7 @@ def user_delete(
     if not store.users.delete(user.id):
         console.print(f"[red]Could not delete user: {user.id}[/red]")
         raise typer.Exit(1)
-    console.print(f"[green]Deleted user: {user.name} ({user.id[:8]})[/green]")
+    console.print(f"[green]Deleted user: {user.display_name} ({user.id[:8]})[/green]")
 
 
 # ---------------------------------------------------------------------------

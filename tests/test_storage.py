@@ -51,11 +51,11 @@ def test_character_roundtrip(store: Store):
 
 
 def test_user_roundtrip(store: Store):
-    user = User(name="Peter Parker", email="peter@example.com")
+    user = User(first_name="Peter", last_name="Parker", email="peter@example.com")
     store.users.save(user)
     loaded = store.users.load(user.id)
     assert loaded is not None
-    assert loaded.name == "Peter Parker"
+    assert loaded.first_name == "Peter"
 
 
 def test_equipment_roundtrip(store: Store):
@@ -375,7 +375,7 @@ def test_campaign_add_remove_user(store: Store):
 
     campaign = Campaign(name="User Campaign")
     store.campaigns.save(campaign)
-    user = User(name="Matt Murdock", email="matt@example.com")
+    user = User(first_name="Matt", last_name="Murdock", email="matt@example.com")
     store.users.save(user)
 
     runner = CliRunner()
@@ -400,7 +400,7 @@ def test_session_add_remove_user(store: Store):
     store.campaigns.save(campaign)
     session = Session(campaign_id=campaign.id, title="S1")
     store.sessions.save(session)
-    user = User(name="Jessica Jones", email="jj@example.com")
+    user = User(first_name="Jessica", last_name="Jones", email="jj@example.com")
     store.users.save(user)
 
     runner = CliRunner()
@@ -421,7 +421,7 @@ def test_user_list_shows_last_login(store: Store):
     from typer.testing import CliRunner
     from mmrpg_nai.cli.main import app
 
-    user = User(name="Storm", email="storm@example.com")
+    user = User(first_name="Storm", email="storm@example.com")
     user.last_login_at = user.created_at
     user.session_timestamps.append(user.created_at)
     store.users.save(user)

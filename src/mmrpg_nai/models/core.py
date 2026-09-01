@@ -239,13 +239,18 @@ class SourceMaterial(BaseModel):
 
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
+    first_name: str
+    last_name: str = ""
     email: str = ""
     notes: str = ""
     session_timestamps: list[datetime] = Field(default_factory=list)
     last_login_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def display_name(self) -> str:
+        return " ".join(part for part in [self.first_name, self.last_name] if part).strip()
 
 
 # ---------------------------------------------------------------------------

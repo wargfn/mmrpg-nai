@@ -46,8 +46,10 @@
       <h2>Users CRUD</h2>
       <label for="userSelect">Existing users</label>
       <select id="userSelect"></select>
-      <label for="userName">Name</label>
-      <input id="userName" placeholder="Name">
+      <label for="userFirstName">First name</label>
+      <input id="userFirstName" placeholder="First name">
+      <label for="userLastName">Last name (optional)</label>
+      <input id="userLastName" placeholder="Last name">
       <label for="userEmail">Email</label>
       <input id="userEmail" placeholder="Email">
       <label for="userNotes">Notes</label>
@@ -79,7 +81,8 @@
     const chatLog = document.getElementById("chatLog");
     const activeLabel = document.getElementById("active");
     const userSelectEl = document.getElementById("userSelect");
-    const userNameEl = document.getElementById("userName");
+    const userFirstNameEl = document.getElementById("userFirstName");
+    const userLastNameEl = document.getElementById("userLastName");
     const userEmailEl = document.getElementById("userEmail");
     const userNotesEl = document.getElementById("userNotes");
 
@@ -154,12 +157,13 @@
         const opt = document.createElement("option");
         opt.value = u.id;
         const last = u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "never";
-        opt.textContent = `${u.name} (${last})`;
+        const displayName = `${u.first_name} ${u.last_name || ""}`.trim();
+        opt.textContent = `${displayName} (${last})`;
         userSelectEl.appendChild(opt);
 
         const sessOpt = document.createElement("option");
         sessOpt.value = u.id;
-        sessOpt.textContent = `${u.name} (${u.id.slice(0, 8)})`;
+        sessOpt.textContent = `${displayName} (${u.id.slice(0, 8)})`;
         sessionUsersEl.appendChild(sessOpt);
       }
       fillUserFormFromSelection();
@@ -267,19 +271,21 @@
     function fillUserFormFromSelection() {
       const id = userSelectEl.value;
       const user = cachedUsers.find((u) => u.id === id);
-      userNameEl.value = user?.name || "";
+      userFirstNameEl.value = user?.first_name || "";
+      userLastNameEl.value = user?.last_name || "";
       userEmailEl.value = user?.email || "";
       userNotesEl.value = user?.notes || "";
     }
 
     async function createUser() {
       const payload = {
-        name: userNameEl.value.trim(),
+        first_name: userFirstNameEl.value.trim(),
+        last_name: userLastNameEl.value.trim(),
         email: userEmailEl.value.trim(),
         notes: userNotesEl.value.trim(),
       };
-      if (!payload.name) {
-        appendLine("System", "User name is required", "sys");
+      if (!payload.first_name) {
+        appendLine("System", "User first name is required", "sys");
         return;
       }
       const r = await fetch("/users", {
@@ -301,12 +307,13 @@
       const id = userSelectEl.value;
       if (!id) return;
       const payload = {
-        name: userNameEl.value.trim(),
+        first_name: userFirstNameEl.value.trim(),
+        last_name: userLastNameEl.value.trim(),
         email: userEmailEl.value.trim(),
         notes: userNotesEl.value.trim(),
       };
-      if (!payload.name) {
-        appendLine("System", "User name is required", "sys");
+      if (!payload.first_name) {
+        appendLine("System", "User first name is required", "sys");
         return;
       }
       const r = await fetch(`/users/${id}`, {

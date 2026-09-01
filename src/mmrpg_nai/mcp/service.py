@@ -98,7 +98,8 @@ class WebSessionStateResponse(BaseModel):
 
 
 class UserWriteRequest(BaseModel):
-    name: str
+    first_name: str
+    last_name: str = ""
     email: str = ""
     notes: str = ""
 
@@ -357,7 +358,15 @@ def get_user(user_id: str) -> User:
 
 @app.post("/users", response_model=User, status_code=201, tags=["users"])
 def create_user(user: UserWriteRequest) -> User:
-    new_user = User(name=user.name, email=user.email, notes=user.notes)
+    first_name = user.first_name.strip()
+    if not first_name:
+        raise HTTPException(status_code=400, detail="first_name is required")
+    new_user = User(
+        first_name=first_name,
+        last_name=user.last_name.strip(),
+        email=user.email.strip(),
+        notes=user.notes,
+    )
     return get_store().users.save(new_user)
 
 
@@ -367,8 +376,12 @@ def update_user(user_id: str, user: UserWriteRequest) -> User:
     existing = store.users.load(user_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="User not found")
-    existing.name = user.name
-    existing.email = user.email
+    first_name = user.first_name.strip()
+    if not first_name:
+        raise HTTPException(status_code=400, detail="first_name is required")
+    existing.first_name = first_name
+    existing.last_name = user.last_name.strip()
+    existing.email = user.email.strip()
     existing.notes = user.notes
     existing.updated_at = datetime.now(timezone.utc)
     return store.users.save(existing)

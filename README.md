@@ -343,7 +343,7 @@ mmrpg-nai user list
 ```
 
 #### `user create`
-Create a user/player record.
+Create a user/player record (`first_name` required; `last_name` and `email` optional).
 ```bash
 mmrpg-nai user create
 ```
@@ -355,9 +355,9 @@ mmrpg-nai user show <user-id>
 ```
 
 #### `user update <user-id>`
-Update name/email/notes for a user/player.
+Update first/last name, email, or notes for a user/player.
 ```bash
-mmrpg-nai user update <user-id> --name "New Name"
+mmrpg-nai user update <user-id> --first-name "New First Name"
 ```
 
 #### `user delete <user-id>`
@@ -622,7 +622,7 @@ mmrpg-nai serve --host 0.0.0.0 --port 9000
 | POST | `/web/session/{id}/chat` | Send chat or meta-direction message |
 | POST | `/web/session/{id}/end` | Mark in-memory web chat session ended |
 | GET/POST | `/users` | List / create users |
-| GET/PUT/DELETE | `/users/{id}` | Get / update / delete a user |
+| GET/PUT/DELETE | `/users/{user_id}` | Get / update / delete a user |
 | GET/POST | `/campaigns` | List / create campaigns |
 | GET/PUT/DELETE | `/campaigns/{id}` | Get / update / delete a campaign |
 | GET/POST | `/sessions` | List / create sessions |

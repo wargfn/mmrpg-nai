@@ -81,7 +81,7 @@ def test_source_material():
 
 
 def test_user_defaults():
-    user = User(name="Natasha Romanoff")
+    user = User(first_name="Natasha", last_name="Romanoff")
     assert user.id
     assert user.last_login_at is None
     assert user.session_timestamps == []
