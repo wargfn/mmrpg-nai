@@ -68,6 +68,7 @@ class WebSessionStartResponse(BaseModel):
     session: Session
     campaign: Campaign
     participants: list[WebParticipant]
+    users: list[User] = Field(default_factory=list)
     recap: str = ""
 
 
@@ -273,6 +274,7 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
         session=session,
         campaign=campaign,
         participants=_as_web_participants(participants),
+        users=users,
         recap=recap,
     )
 

@@ -151,6 +151,7 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     session_id = started["session"]["id"]
     assert started["campaign"]["id"] == campaign["id"]
     assert started["session"]["user_ids"] == [user["id"]]
+    assert started["users"][0]["id"] == user["id"]
 
     r = client.post(f"/web/session/{session_id}/chat", json={"message": "I investigate the room."})
     assert r.status_code == 200

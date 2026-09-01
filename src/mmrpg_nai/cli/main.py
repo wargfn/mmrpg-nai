@@ -352,7 +352,7 @@ def campaign_show(
     for uid in campaign.user_ids:
         u = store.users.load(uid)
         if u:
-            player_names.append(u.name)
+            player_names.append(u.display_name)
 
     info = (
         f"[bold]Name:[/bold]        {campaign.name}\n"

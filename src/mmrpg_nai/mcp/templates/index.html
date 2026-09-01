@@ -74,6 +74,7 @@
     let renderedLogCount = 0;
     let lastRecap = "";
     let pollHandle = null;
+    let pollingEnabled = false;
 
     const campaignEl = document.getElementById("campaign");
     const resumeEl = document.getElementById("resumeSession");
@@ -213,10 +214,8 @@
       appendSessionContext(data.session, data.campaign, data.users || [], data.participants || []);
       if (lastRecap) {
         appendLine("Previously", lastRecap, "sys");
-        renderLog(data.session.log, false);
-      } else {
-        renderLog(data.session.log, false);
       }
+      renderLog(data.session.log, false);
       await loadBootstrap();
     }
 
@@ -276,16 +275,22 @@
       try {
         await fetchSessionState(false);
       } finally {
-        pollHandle = setTimeout(pollLoop, 1500);
+        if (pollingEnabled) {
+          pollHandle = setTimeout(pollLoop, 1500);
+        } else {
+          pollHandle = null;
+        }
       }
     }
 
     function startPolling() {
+      pollingEnabled = true;
       if (pollHandle !== null) return;
       pollHandle = setTimeout(pollLoop, 1500);
     }
 
     function stopPolling() {
+      pollingEnabled = false;
       if (pollHandle === null) return;
       clearTimeout(pollHandle);
       pollHandle = null;
