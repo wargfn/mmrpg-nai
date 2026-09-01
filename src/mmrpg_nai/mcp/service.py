@@ -134,9 +134,6 @@ def _get_active_narrator(session_id: str) -> Narrator | None:
         return _active_narrators.get(session_id)
 
 
-
-
-
 def _load_participants(store: Store, campaign: Campaign, participant_ids: list[str]) -> list[Character]:
     ids = participant_ids or campaign.character_ids
     participants = [c for cid in ids if (c := store.characters.load(cid)) is not None]
