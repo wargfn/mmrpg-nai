@@ -1,0 +1,25 @@
+{
+  "name": "Matthias",
+  "alias": "Matthias",
+  "rank": "rookie",
+  "tier": 1,
+  "is_npc": false,
+  "background": "Bitten by a radioactive spider. Balances hero life with everyday struggles.",
+  "traits": ["Combat Reflexes", "Connections:Outsiders", "Fresh Eyes", "Stranger"],
+  "abilities": {
+    "melee":      { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 2 },
+    "agility":    { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 1  },
+    "resilience": { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 1  },
+    "vigilance":  { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 1  },
+    "ego":        { "score": 0, "edge": 0, "defense_score": 10, "non-combat_checks": 0  },
+    "logic":      { "score": 1, "edge": 1, "defense_score": 11, "non-combat_checks": 1  }
+  },
+  "powers": ["Attack Stance Standard", "Healing Factor 1 Health", "Mighty 1", "Sturdy 1" ],
+  "health": {"score": 30, "damage_reduction": -1 },
+  "focus": {"score": 30, "damage_reduction": -1 },
+  "karma": 5,
+  "speed": {"run": 5, "climb": 3, "swim": 3, "jump": 3 },
+  "initiative_mod": 1,
+  "tags": ["hounded", "mutant-associate"],
+  "equipment": ["baton"]
+}

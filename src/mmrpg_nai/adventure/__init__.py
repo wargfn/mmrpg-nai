@@ -1,0 +1,1 @@
+"""Adventure template importer."""

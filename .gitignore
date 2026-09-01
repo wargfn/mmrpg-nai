@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MMRPG-NAI runtime data (do not commit campaign/session data)
+data/campaigns/
+data/sessions/
+data/characters/
+data/equipment/
+data/power_sets/
+data/adventures/
+data/source_materials/
+data/config.json
