@@ -10,4 +10,4 @@ def test_mask_token_short() -> None:
 
 
 def test_mask_token_long() -> None:
-    assert _mask_token("ghp_1234567890abcd") == "ghp_*********abcd"
+    assert _mask_token("ghp_1234567890abcd") == "ghp_**********abcd"
