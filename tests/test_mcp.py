@@ -91,12 +91,15 @@ def test_web_index(client: TestClient):
 
 def test_web_bootstrap(client: TestClient):
     client.post("/campaigns", json={"name": "Web Campaign", "description": "Demo"})
+    client.post("/users", json={"name": "Alice", "email": "a@example.com"})
     r = client.get("/web/bootstrap")
     assert r.status_code == 200
     data = r.json()
     assert len(data["campaigns"]) == 1
     assert "sessions" in data
     assert "characters" in data
+    assert "users" in data
+    assert len(data["users"]) == 1
 
 
 def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch):
@@ -132,15 +135,22 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
 
     campaign = client.post("/campaigns", json={"name": "Campaign 1", "description": "D"}).json()
     character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
+    user = client.post("/users", json={"name": "Player One", "email": "p1@example.com"}).json()
 
     r = client.post(
         "/web/session/start",
-        json={"campaign_id": campaign["id"], "participant_ids": [character["id"]], "title": "Web Session"},
+        json={
+            "campaign_id": campaign["id"],
+            "participant_ids": [character["id"]],
+            "user_ids": [user["id"]],
+            "title": "Web Session",
+        },
     )
     assert r.status_code == 200
     started = r.json()
     session_id = started["session"]["id"]
     assert started["campaign"]["id"] == campaign["id"]
+    assert started["session"]["user_ids"] == [user["id"]]
 
     r = client.post(f"/web/session/{session_id}/chat", json={"message": "I investigate the room."})
     assert r.status_code == 200
@@ -156,6 +166,11 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     assert state.status_code == 200
     assert state.json()["session"]["id"] == session_id
     assert state.json()["is_active"] is True
+    assert state.json()["users"][0]["id"] == user["id"]
+
+    touched_user = client.get(f"/users/{user['id']}").json()
+    assert touched_user["last_login_at"] is not None
+    assert len(touched_user["session_timestamps"]) == 1
 
     resumed = client.post("/web/session/start", json={"session_id": session_id})
     assert resumed.status_code == 200
@@ -189,9 +204,16 @@ def test_web_multiple_sessions_isolated(client: TestClient, monkeypatch: pytest.
     monkeypatch.setattr(service, "Narrator", DummyNarrator)
     campaign = client.post("/campaigns", json={"name": "Campaign A", "description": "D"}).json()
     character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
+    user = client.post("/users", json={"name": "Player", "email": "p@example.com"}).json()
 
-    s1 = client.post("/web/session/start", json={"campaign_id": campaign["id"], "participant_ids": [character["id"]]}).json()
-    s2 = client.post("/web/session/start", json={"campaign_id": campaign["id"], "participant_ids": [character["id"]]}).json()
+    s1 = client.post(
+        "/web/session/start",
+        json={"campaign_id": campaign["id"], "participant_ids": [character["id"]], "user_ids": [user["id"]]},
+    ).json()
+    s2 = client.post(
+        "/web/session/start",
+        json={"campaign_id": campaign["id"], "participant_ids": [character["id"]], "user_ids": [user["id"]]},
+    ).json()
 
     id1 = s1["session"]["id"]
     id2 = s2["session"]["id"]
@@ -229,7 +251,11 @@ def test_web_session_end(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(service, "Narrator", DummyNarrator)
     campaign = client.post("/campaigns", json={"name": "Campaign Z", "description": "D"}).json()
     character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
-    started = client.post("/web/session/start", json={"campaign_id": campaign["id"], "participant_ids": [character["id"]]}).json()
+    user = client.post("/users", json={"name": "Player", "email": "p@example.com"}).json()
+    started = client.post(
+        "/web/session/start",
+        json={"campaign_id": campaign["id"], "participant_ids": [character["id"]], "user_ids": [user["id"]]},
+    ).json()
     session_id = started["session"]["id"]
 
     r = client.post(f"/web/session/{session_id}/end")
@@ -239,3 +265,25 @@ def test_web_session_end(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     r = client.post(f"/web/session/{session_id}/end")
     assert r.status_code == 200
     assert r.json() == {"ended": False}
+
+
+def test_user_crud(client: TestClient):
+    r = client.post("/users", json={"name": "Logan", "email": "logan@example.com", "notes": "Wolverine"})
+    assert r.status_code == 201
+    user = r.json()
+    uid = user["id"]
+
+    r = client.get("/users")
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+
+    r = client.put(
+        f"/users/{uid}",
+        json={**user, "name": "James Howlett", "email": "james@example.com"},
+    )
+    assert r.status_code == 200
+    assert r.json()["name"] == "James Howlett"
+
+    r = client.delete(f"/users/{uid}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] is True

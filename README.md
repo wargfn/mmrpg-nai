@@ -226,6 +226,24 @@ List all player characters in a campaign's default character list.
 mmrpg-nai campaign characters <campaign-id>
 ```
 
+#### `campaign add-user <campaign-id> <user-id>`
+Add a user/player to a campaign.
+```bash
+mmrpg-nai campaign add-user <campaign-id> <user-id>
+```
+
+#### `campaign remove-user <campaign-id> <user-id>`
+Remove a user/player from a campaign.
+```bash
+mmrpg-nai campaign remove-user <campaign-id> <user-id>
+```
+
+#### `campaign users <campaign-id>`
+List users/players tracked in a campaign.
+```bash
+mmrpg-nai campaign users <campaign-id>
+```
+
 ---
 
 ### `mmrpg-nai session` — Sessions
@@ -254,6 +272,18 @@ mmrpg-nai session add-character <session-id> <character-id>
 Remove a character participant from a session.
 ```bash
 mmrpg-nai session remove-character <session-id> <character-id>
+```
+
+#### `session add-user <session-id> <user-id>`
+Add a user/player participant to a session.
+```bash
+mmrpg-nai session add-user <session-id> <user-id>
+```
+
+#### `session remove-user <session-id> <user-id>`
+Remove a user/player participant from a session.
+```bash
+mmrpg-nai session remove-user <session-id> <user-id>
 ```
 
 #### `session run`
@@ -301,6 +331,40 @@ Print the full conversation log for a session.
 mmrpg-nai session log <session-id>
 ```
 Meta entries are shown in yellow, narrator in blue, player in green.
+
+---
+
+### `mmrpg-nai user` — Users / Players
+
+#### `user list`
+List users and show their last login timestamp (updated when they join a session).
+```bash
+mmrpg-nai user list
+```
+
+#### `user create`
+Create a user/player record.
+```bash
+mmrpg-nai user create
+```
+
+#### `user show <user-id>`
+Show details for a user/player.
+```bash
+mmrpg-nai user show <user-id>
+```
+
+#### `user update <user-id>`
+Update name/email/notes for a user/player.
+```bash
+mmrpg-nai user update <user-id> --name "New Name"
+```
+
+#### `user delete <user-id>`
+Delete a user/player.
+```bash
+mmrpg-nai user delete <user-id>
+```
 
 ---
 
@@ -557,6 +621,8 @@ mmrpg-nai serve --host 0.0.0.0 --port 9000
 | GET | `/web/session/{id}` | Fetch current session state/log for multi-client sync |
 | POST | `/web/session/{id}/chat` | Send chat or meta-direction message |
 | POST | `/web/session/{id}/end` | Mark in-memory web chat session ended |
+| GET/POST | `/users` | List / create users |
+| GET/PUT/DELETE | `/users/{id}` | Get / update / delete a user |
 | GET/POST | `/campaigns` | List / create campaigns |
 | GET/PUT/DELETE | `/campaigns/{id}` | Get / update / delete a campaign |
 | GET/POST | `/sessions` | List / create sessions |

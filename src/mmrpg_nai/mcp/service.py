@@ -6,6 +6,7 @@ Exposes MMRPG data as REST endpoints that can be consumed by other tools
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import re
 from pathlib import Path
 from threading import Lock
@@ -26,6 +27,7 @@ from mmrpg_nai.models.core import (
     PowerSet,
     Session,
     SourceMaterial,
+    User,
 )
 from mmrpg_nai.storage.store import Store
 
@@ -59,6 +61,7 @@ class WebSessionStartRequest(BaseModel):
     session_id: str | None = None
     title: str | None = None
     participant_ids: list[str] = Field(default_factory=list)
+    user_ids: list[str] = Field(default_factory=list)
 
 
 class WebSessionStartResponse(BaseModel):
@@ -83,12 +86,14 @@ class WebBootstrapResponse(BaseModel):
     campaigns: list[Campaign]
     sessions: list[Session]
     characters: list[Character]
+    users: list[User]
 
 
 class WebSessionStateResponse(BaseModel):
     session: Session
     campaign: Campaign
     participants: list[WebParticipant]
+    users: list[User]
     is_active: bool
 
 
@@ -119,6 +124,20 @@ def _get_session_lock(session_id: str) -> Lock:
 def _get_active_narrator(session_id: str) -> Narrator | None:
     with _active_narrators_lock:
         return _active_narrators.get(session_id)
+
+
+def _touch_users_for_session(store: Store, user_ids: list[str]) -> None:
+    if not user_ids:
+        return
+    now = datetime.now(timezone.utc)
+    for uid in dict.fromkeys(user_ids):
+        user = store.users.load(uid)
+        if user is None:
+            continue
+        user.last_login_at = now
+        user.session_timestamps.append(now)
+        user.updated_at = now
+        store.users.save(user)
 
 
 def _load_participants(store: Store, campaign: Campaign, participant_ids: list[str]) -> list[Character]:
@@ -197,6 +216,7 @@ def web_bootstrap() -> WebBootstrapResponse:
         campaigns=campaigns,
         sessions=sessions,
         characters=[c for c in store.characters.list_all() if not c.is_npc],
+        users=store.users.list_all(),
     )
 
 
@@ -213,6 +233,10 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
         if campaign is None:
             raise HTTPException(status_code=404, detail="Campaign not found")
         participants = _load_participants(store, campaign, session.participants)
+        user_ids = session.user_ids or campaign.user_ids
+        users = [u for uid in user_ids if (u := store.users.load(uid)) is not None]
+        session.user_ids = [u.id for u in users]
+        store.sessions.save(session)
         lock = _get_session_lock(session.id)
         with lock:
             narrator = _get_active_narrator(session.id)
@@ -228,6 +252,9 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
             raise HTTPException(status_code=404, detail="Campaign not found")
 
         participants = _load_participants(store, campaign, req.participant_ids)
+        chosen_user_ids = req.user_ids or campaign.user_ids
+        users = [u for uid in chosen_user_ids if (u := store.users.load(uid)) is not None]
+        user_ids = [u.id for u in users]
         with _session_create_lock:
             existing = store.sessions.find(campaign_id=campaign.id)
             next_session_number = len(existing) + 1
@@ -236,11 +263,16 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
                 title=req.title or f"Session {next_session_number}",
                 session_number=next_session_number,
                 participants=[p.id for p in participants],
+                user_ids=user_ids,
             )
             store.sessions.save(session)
             campaign.session_ids.append(session.id)
+            for uid in user_ids:
+                if uid not in campaign.user_ids:
+                    campaign.user_ids.append(uid)
             store.campaigns.save(campaign)
         _, recap = _start_narrator(store, cfg, session, campaign, participants)
+    _touch_users_for_session(store, session.user_ids)
     return WebSessionStartResponse(
         session=session,
         campaign=campaign,
@@ -259,10 +291,13 @@ def web_session_state(session_id: str) -> WebSessionStateResponse:
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
     participants = _load_participants(store, campaign, session.participants)
+    effective_user_ids = session.user_ids or campaign.user_ids
+    users = [u for uid in effective_user_ids if (u := store.users.load(uid)) is not None]
     return WebSessionStateResponse(
         session=session,
         campaign=campaign,
         participants=_as_web_participants(participants),
+        users=users,
         is_active=_get_active_narrator(session_id) is not None,
     )
 
@@ -305,6 +340,40 @@ def web_session_end(session_id: str) -> dict[str, bool]:
         with _active_narrators_lock:
             ended = _active_narrators.pop(session_id, None) is not None
     return {"ended": ended}
+
+
+# ---------------------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------------------
+
+
+@app.get("/users", response_model=list[User], tags=["users"])
+def list_users() -> list[User]:
+    return get_store().users.list_all()
+
+
+@app.get("/users/{id}", response_model=User, tags=["users"])
+def get_user(id: str) -> User:
+    obj = get_store().users.load(id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return obj
+
+
+@app.post("/users", response_model=User, status_code=201, tags=["users"])
+def create_user(user: User) -> User:
+    return get_store().users.save(user)
+
+
+@app.put("/users/{id}", response_model=User, tags=["users"])
+def update_user(id: str, user: User) -> User:
+    user = user.model_copy(update={"id": id, "updated_at": datetime.now(timezone.utc)})
+    return get_store().users.save(user)
+
+
+@app.delete("/users/{id}", tags=["users"])
+def delete_user(id: str) -> dict[str, bool]:
+    return {"deleted": get_store().users.delete(id)}
 
 
 # ---------------------------------------------------------------------------

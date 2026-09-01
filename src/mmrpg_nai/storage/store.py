@@ -17,6 +17,7 @@ from mmrpg_nai.models.core import (
     PowerSet,
     Session,
     SourceMaterial,
+    User,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -121,6 +122,7 @@ class Store:
         self.power_sets = _Repo(base / "power_sets", PowerSet)
         self.adventures = _Repo(base / "adventures", Adventure)
         self.source_materials = _Repo(base / "source_materials", SourceMaterial)
+        self.users = _Repo(base / "users", User)
         self._base = base  # kept for backward-compat; prefer base_dir
 
     # ------------------------------------------------------------------

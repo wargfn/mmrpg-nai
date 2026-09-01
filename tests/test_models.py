@@ -17,6 +17,7 @@ from mmrpg_nai.models.core import (
     Scene,
     Session,
     SourceMaterial,
+    User,
 )
 
 
@@ -77,3 +78,10 @@ def test_source_material():
     sm = SourceMaterial(title="Core Rulebook", file_path="/tmp/core.pdf", page_count=300)
     assert sm.title == "Core Rulebook"
     assert sm.page_count == 300
+
+
+def test_user_defaults():
+    user = User(name="Natasha Romanoff")
+    assert user.id
+    assert user.last_login_at is None
+    assert user.session_timestamps == []

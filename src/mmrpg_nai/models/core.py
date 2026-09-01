@@ -157,6 +157,7 @@ class Session(BaseModel):
     synopsis: str = ""
     log: list[LogEntry] = Field(default_factory=list)
     participants: list[str] = Field(default_factory=list, description="Character IDs")
+    user_ids: list[str] = Field(default_factory=list, description="User/player IDs")
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ended_at: datetime | None = None
     notes: str = ""
@@ -185,6 +186,7 @@ class Campaign(BaseModel):
     settings: CampaignSettings = Field(default_factory=CampaignSettings)
     session_ids: list[str] = Field(default_factory=list)
     character_ids: list[str] = Field(default_factory=list)
+    user_ids: list[str] = Field(default_factory=list, description="User/player IDs in this campaign")
     enemy_ids: list[str] = Field(default_factory=list, description="Character IDs of enemies/antagonists for this campaign")
     adventure_ids: list[str] = Field(default_factory=list)
     source_material_ids: list[str] = Field(default_factory=list)
@@ -233,6 +235,17 @@ class SourceMaterial(BaseModel):
     page_count: int = 0
     extracted_text_path: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class User(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    email: str = ""
+    notes: str = ""
+    session_timestamps: list[datetime] = Field(default_factory=list)
+    last_login_at: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------

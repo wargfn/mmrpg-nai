@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from mmrpg_nai.models.core import Campaign, Character, Equipment, EquipmentType, NarratorConfig, PowerSet, Session
+from mmrpg_nai.models.core import Campaign, Character, Equipment, EquipmentType, NarratorConfig, PowerSet, Session, User
 from mmrpg_nai.storage.store import Store
 
 
@@ -48,6 +48,14 @@ def test_character_roundtrip(store: Store):
     loaded = store.characters.load(char.id)
     assert loaded is not None
     assert loaded.alias == "Tony Stark"
+
+
+def test_user_roundtrip(store: Store):
+    user = User(name="Peter Parker", email="peter@example.com")
+    store.users.save(user)
+    loaded = store.users.load(user.id)
+    assert loaded is not None
+    assert loaded.name == "Peter Parker"
 
 
 def test_equipment_roundtrip(store: Store):
@@ -359,6 +367,69 @@ def test_session_add_remove_character(store: Store):
 
     reloaded2 = store.sessions.load(session.id)
     assert char.id not in reloaded2.participants
+
+
+def test_campaign_add_remove_user(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+
+    campaign = Campaign(name="User Campaign")
+    store.campaigns.save(campaign)
+    user = User(name="Matt Murdock", email="matt@example.com")
+    store.users.save(user)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["campaign", "add-user", campaign.id[:8], user.id[:8], "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert user.id in reloaded.user_ids
+
+    result2 = runner.invoke(app, ["campaign", "remove-user", campaign.id[:8], user.id[:8], "--data-dir", str(store.base_dir)])
+    assert result2.exit_code == 0, result2.output
+
+    reloaded2 = store.campaigns.load(campaign.id)
+    assert user.id not in reloaded2.user_ids
+
+
+def test_session_add_remove_user(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+
+    campaign = Campaign(name="Session User Campaign")
+    store.campaigns.save(campaign)
+    session = Session(campaign_id=campaign.id, title="S1")
+    store.sessions.save(session)
+    user = User(name="Jessica Jones", email="jj@example.com")
+    store.users.save(user)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["session", "add-user", session.id[:8], user.id[:8], "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.sessions.load(session.id)
+    assert user.id in reloaded.user_ids
+
+    result2 = runner.invoke(app, ["session", "remove-user", session.id[:8], user.id[:8], "--data-dir", str(store.base_dir)])
+    assert result2.exit_code == 0, result2.output
+
+    reloaded2 = store.sessions.load(session.id)
+    assert user.id not in reloaded2.user_ids
+
+
+def test_user_list_shows_last_login(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+
+    user = User(name="Storm", email="storm@example.com")
+    user.last_login_at = user.created_at
+    user.session_timestamps.append(user.created_at)
+    store.users.save(user)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["user", "list", "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+    assert "Storm" in result.output
 
 
 def test_load_corrupt_json_returns_none(store: Store):

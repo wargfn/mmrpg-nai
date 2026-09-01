@@ -28,6 +28,8 @@
       <select id="campaign"></select>
       <label for="sessionTitle">Session title</label>
       <input id="sessionTitle" placeholder="Session title">
+      <label for="sessionUsers">Players (Ctrl/Cmd-click for multi-select)</label>
+      <select id="sessionUsers" multiple size="5"></select>
       <button id="startBtn">Start New Session</button>
 
       <hr>
@@ -39,6 +41,21 @@
       <button id="attachBtn">Attach to Session</button>
 
       <p id="active" class="status">No active session.</p>
+
+      <hr>
+      <h2>Users CRUD</h2>
+      <label for="userSelect">Existing users</label>
+      <select id="userSelect"></select>
+      <label for="userName">Name</label>
+      <input id="userName" placeholder="Name">
+      <label for="userEmail">Email</label>
+      <input id="userEmail" placeholder="Email">
+      <label for="userNotes">Notes</label>
+      <input id="userNotes" placeholder="Notes">
+      <button id="createUserBtn">Create User</button>
+      <button id="updateUserBtn">Update User</button>
+      <button id="deleteUserBtn">Delete User</button>
+      <button id="refreshUsersBtn">Refresh Users</button>
     </section>
 
     <section class="card">
@@ -58,8 +75,15 @@
 
     const campaignEl = document.getElementById("campaign");
     const resumeEl = document.getElementById("resumeSession");
+    const sessionUsersEl = document.getElementById("sessionUsers");
     const chatLog = document.getElementById("chatLog");
     const activeLabel = document.getElementById("active");
+    const userSelectEl = document.getElementById("userSelect");
+    const userNameEl = document.getElementById("userName");
+    const userEmailEl = document.getElementById("userEmail");
+    const userNotesEl = document.getElementById("userNotes");
+
+    let cachedUsers = [];
 
     function appendLine(role, content, cls = "") {
       const div = document.createElement("div");
@@ -122,6 +146,23 @@
         opt.textContent = `${s.title} (${s.id.slice(0, 8)})`;
         resumeEl.appendChild(opt);
       }
+
+      cachedUsers = data.users || [];
+      userSelectEl.innerHTML = "";
+      sessionUsersEl.innerHTML = "";
+      for (const u of cachedUsers) {
+        const opt = document.createElement("option");
+        opt.value = u.id;
+        const last = u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "never";
+        opt.textContent = `${u.name} (${last})`;
+        userSelectEl.appendChild(opt);
+
+        const sessOpt = document.createElement("option");
+        sessOpt.value = u.id;
+        sessOpt.textContent = `${u.name} (${u.id.slice(0, 8)})`;
+        sessionUsersEl.appendChild(sessOpt);
+      }
+      fillUserFormFromSelection();
     }
 
     async function startSession(payload) {
@@ -173,6 +214,7 @@
       await startSession({
         campaign_id: campaignEl.value,
         title: document.getElementById("sessionTitle").value || null,
+        user_ids: Array.from(sessionUsersEl.selectedOptions).map((o) => o.value),
       });
     });
 
@@ -221,6 +263,83 @@
         stopPolling();
       }
     });
+
+    function fillUserFormFromSelection() {
+      const id = userSelectEl.value;
+      const user = cachedUsers.find((u) => u.id === id);
+      userNameEl.value = user?.name || "";
+      userEmailEl.value = user?.email || "";
+      userNotesEl.value = user?.notes || "";
+    }
+
+    async function createUser() {
+      const payload = {
+        name: userNameEl.value.trim(),
+        email: userEmailEl.value.trim(),
+        notes: userNotesEl.value.trim(),
+      };
+      if (!payload.name) {
+        appendLine("System", "User name is required", "sys");
+        return;
+      }
+      const r = await fetch("/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not create user", "sys");
+        return;
+      }
+      await loadBootstrap();
+      userSelectEl.value = data.id;
+      fillUserFormFromSelection();
+    }
+
+    async function updateUser() {
+      const id = userSelectEl.value;
+      if (!id) return;
+      const current = cachedUsers.find((u) => u.id === id);
+      if (!current) return;
+      const payload = {
+        ...current,
+        name: userNameEl.value.trim() || current.name,
+        email: userEmailEl.value.trim(),
+        notes: userNotesEl.value.trim(),
+      };
+      const r = await fetch(`/users/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not update user", "sys");
+        return;
+      }
+      await loadBootstrap();
+      userSelectEl.value = data.id;
+      fillUserFormFromSelection();
+    }
+
+    async function deleteUser() {
+      const id = userSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/users/${id}`, { method: "DELETE" });
+      const data = await r.json();
+      if (!r.ok || !data.deleted) {
+        appendLine("System", "Could not delete user", "sys");
+        return;
+      }
+      await loadBootstrap();
+    }
+
+    userSelectEl.addEventListener("change", fillUserFormFromSelection);
+    document.getElementById("createUserBtn").addEventListener("click", createUser);
+    document.getElementById("updateUserBtn").addEventListener("click", updateUser);
+    document.getElementById("deleteUserBtn").addEventListener("click", deleteUser);
+    document.getElementById("refreshUsersBtn").addEventListener("click", loadBootstrap);
 
     startPolling();
     loadBootstrap();
