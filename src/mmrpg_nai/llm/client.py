@@ -86,13 +86,15 @@ class LLMClient:
         in the retry loop, but errors raised *during* iteration are wrapped and
         re-raised without a retry (retrying mid-stream is not safe).
         """
+        uses_completion_tokens = self.cfg.model.startswith(("gpt-5.", "gpt-5-"))
+        token_param = "max_completion_tokens" if uses_completion_tokens else "max_tokens"
         kwargs: dict = dict(
             model=self.cfg.model,
             messages=messages,
-            max_tokens=self.cfg.max_tokens,
             temperature=self.cfg.temperature,
             stream=stream,
         )
+        kwargs[token_param] = self.cfg.max_tokens
 
         last_exc: Exception | None = None
         # attempt is 0-indexed: attempt 0 is the first try, 1..._MAX_RETRIES are retries.
