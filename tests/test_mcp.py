@@ -156,6 +156,8 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     assert r.status_code == 200
     assert r.json()["response"] == "Narrated: I investigate the room."
     assert r.json()["mode"] == "narrate"
+    assert any(e["role"] == "player" and e["content"] == "I investigate the room." for e in r.json()["log"])
+    assert any(e["role"] == "narrator" and e["content"] == "Narrated: I investigate the room." for e in r.json()["log"])
 
     r = client.post(f"/web/session/{session_id}/chat", json={"message": "[raise the tension]"})
     assert r.status_code == 200

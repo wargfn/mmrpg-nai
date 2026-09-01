@@ -99,6 +99,22 @@
       chatLog.scrollTop = chatLog.scrollHeight;
     }
 
+    function appendSessionContext(session, campaign, users, participants) {
+      if (!session || !campaign) return;
+      const userNames = (users || [])
+        .map((u) => `${u.first_name || ""} ${u.last_name || ""}`.trim())
+        .filter((n) => n)
+        .join(", ") || "—";
+      const partyNames = (participants || [])
+        .map((p) => p.name)
+        .filter((n) => n)
+        .join(", ") || "—";
+      appendLine("Session", `${session.title} (#${session.session_number})`, "sys");
+      appendLine("Campaign", campaign.name, "sys");
+      appendLine("Players", userNames, "sys");
+      appendLine("Party", partyNames, "sys");
+    }
+
     function setActiveStatus(session, isActive) {
       activeSessionId = session.id;
       const status = isActive ? "active" : "inactive";
@@ -106,15 +122,16 @@
     }
 
     function renderLog(entries, reset = false) {
-      if (reset || entries.length < renderedLogCount) {
+      const safeEntries = Array.isArray(entries) ? entries : [];
+      if (reset || safeEntries.length < renderedLogCount) {
         chatLog.replaceChildren();
         renderedLogCount = 0;
       }
-      for (let i = renderedLogCount; i < entries.length; i += 1) {
-        const entry = entries[i];
+      for (let i = renderedLogCount; i < safeEntries.length; i += 1) {
+        const entry = safeEntries[i];
         appendLine(entry.role, entry.content);
       }
-      renderedLogCount = entries.length;
+      renderedLogCount = safeEntries.length;
     }
 
     async function fetchSessionState(reset = false) {
@@ -127,7 +144,14 @@
         return;
       }
       setActiveStatus(data.session, data.is_active);
-      renderLog(data.session.log, reset);
+      if (reset) {
+        chatLog.replaceChildren();
+        renderedLogCount = 0;
+        appendSessionContext(data.session, data.campaign, data.users, data.participants);
+        renderLog(data.session.log, false);
+        return;
+      }
+      renderLog(data.session.log, false);
     }
 
     async function loadBootstrap() {
@@ -185,12 +209,13 @@
       setActiveStatus(data.session, true);
       renderedLogCount = 0;
       lastRecap = data.recap || "";
+      chatLog.replaceChildren();
+      appendSessionContext(data.session, data.campaign, data.users || [], data.participants || []);
       if (lastRecap) {
-        chatLog.replaceChildren();
         appendLine("Previously", lastRecap, "sys");
         renderLog(data.session.log, false);
       } else {
-        renderLog(data.session.log, true);
+        renderLog(data.session.log, false);
       }
       await loadBootstrap();
     }
@@ -211,7 +236,12 @@
         appendLine("System", data.detail || "Chat error", "sys");
         return;
       }
+      const beforeCount = renderedLogCount;
       renderLog(data.log, false);
+      if (renderedLogCount === beforeCount) {
+        appendLine("You", text);
+        appendLine("Narrator", data.response, data.mode === "meta" ? "sys" : "");
+      }
     }
 
     document.getElementById("startBtn").addEventListener("click", async () => {
@@ -233,6 +263,7 @@
       activeSessionId = id;
       renderedLogCount = 0;
       lastRecap = "";
+      chatLog.replaceChildren();
       await fetchSessionState(true);
     });
 
