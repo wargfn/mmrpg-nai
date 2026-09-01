@@ -101,7 +101,7 @@
 
       activeSessionId = data.session.id;
       activeLabel.textContent = `Active session: ${data.session.title} (${activeSessionId.slice(0, 8)})`;
-      chatLog.innerHTML = "";
+      chatLog.replaceChildren();
       if (data.recap) {
         appendLine("Previously", data.recap, "sys");
       }
