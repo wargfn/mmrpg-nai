@@ -205,14 +205,24 @@ List all enemies/antagonists saved to a campaign's roster.
 ```bash
 mmrpg-nai campaign enemies <campaign-id>
 ```
-Output:
+
+#### `campaign add-character <campaign-id> <character-id>`
+Add a player character to the campaign's default character list.
+This list is used as a fallback when a session has no explicit participants selected.
+```bash
+mmrpg-nai campaign add-character <campaign-id> <character-id>
 ```
-┌──────────┬──────────────┬──────────────────┬──────────┬──────┬────┐
-│ ID       │ Name         │ Alias            │ Rank     │ Tier │ HP │
-├──────────┼──────────────┼──────────────────┼──────────┼──────┼────┤
-│ a1b2c3d4 │ Doctor Doom  │ Victor von Doom  │ master   │ 3    │ 80 │
-│ e5f6g7h8 │ Thanos       │ Mad Titan        │ legendary│ 5    │ 150│
-└──────────┴──────────────┴──────────────────┴──────────┴──────┴────┘
+
+#### `campaign remove-character <campaign-id> <character-id>`
+Remove a character from the campaign's default character list.
+```bash
+mmrpg-nai campaign remove-character <campaign-id> <character-id>
+```
+
+#### `campaign characters <campaign-id>`
+List all player characters in a campaign's default character list.
+```bash
+mmrpg-nai campaign characters <campaign-id>
 ```
 
 ---
@@ -231,6 +241,18 @@ Create a new session record (without running it).
 ```bash
 mmrpg-nai session create
 # prompts for campaign ID and session title
+```
+
+#### `session add-character <session-id> <character-id>`
+Add a character as a participant in a specific session.
+```bash
+mmrpg-nai session add-character <session-id> <character-id>
+```
+
+#### `session remove-character <session-id> <character-id>`
+Remove a character participant from a session.
+```bash
+mmrpg-nai session remove-character <session-id> <character-id>
 ```
 
 #### `session run`

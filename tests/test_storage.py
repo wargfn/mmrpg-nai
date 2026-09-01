@@ -309,3 +309,54 @@ def test_campaign_show_no_plan(store: Store):
     ])
     assert result.exit_code == 0, result.output
     assert "No plan" in result.output
+
+
+def test_campaign_add_remove_character(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import Character
+
+    campaign = Campaign(name="Char Test")
+    store.campaigns.save(campaign)
+    char = Character(name="Matthias", alias="Matthias")
+    store.characters.save(char)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["campaign", "add-character", campaign.id[:8], char.id[:8], "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+    assert "Matthias" in result.output
+
+    reloaded = store.campaigns.load(campaign.id)
+    assert char.id in reloaded.character_ids
+
+    result2 = runner.invoke(app, ["campaign", "remove-character", campaign.id[:8], char.id[:8], "--data-dir", str(store.base_dir)])
+    assert result2.exit_code == 0, result2.output
+
+    reloaded2 = store.campaigns.load(campaign.id)
+    assert char.id not in reloaded2.character_ids
+
+
+def test_session_add_remove_character(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+    from mmrpg_nai.models.core import Character, Session
+
+    campaign = Campaign(name="Session Char Test")
+    store.campaigns.save(campaign)
+    session = Session(campaign_id=campaign.id, title="S1")
+    store.sessions.save(session)
+    char = Character(name="Matthias", alias="Matthias")
+    store.characters.save(char)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["session", "add-character", session.id[:8], char.id[:8], "--data-dir", str(store.base_dir)])
+    assert result.exit_code == 0, result.output
+
+    reloaded = store.sessions.load(session.id)
+    assert char.id in reloaded.participants
+
+    result2 = runner.invoke(app, ["session", "remove-character", session.id[:8], char.id[:8], "--data-dir", str(store.base_dir)])
+    assert result2.exit_code == 0, result2.output
+
+    reloaded2 = store.sessions.load(session.id)
+    assert char.id not in reloaded2.participants

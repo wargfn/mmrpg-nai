@@ -434,6 +434,66 @@ def campaign_enemies(
     console.print(table)
 
 
+@campaign_app.command("add-character")
+def campaign_add_character(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    character_id: str = typer.Argument(..., help="Character ID (from 'character list')"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Add a player character to a campaign's default character list."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    char = _load_by_prefix_or_exact(store.characters, character_id, "Character")
+    character_id = char.id
+    if character_id in campaign.character_ids:
+        console.print(f"[yellow]{char.name!r} is already in this campaign's character list.[/yellow]")
+        return
+    campaign.character_ids.append(character_id)
+    store.campaigns.save(campaign)
+    console.print(f"[green]Added {char.name!r} to campaign {campaign.name!r}.[/green]")
+
+
+@campaign_app.command("remove-character")
+def campaign_remove_character(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    character_id: str = typer.Argument(..., help="Character ID"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Remove a character from a campaign's default character list."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    char = _load_by_prefix_or_exact(store.characters, character_id, "Character")
+    character_id = char.id
+    if character_id not in campaign.character_ids:
+        console.print(f"[yellow]{char.name!r} is not in this campaign's character list.[/yellow]")
+        return
+    campaign.character_ids.remove(character_id)
+    store.campaigns.save(campaign)
+    console.print(f"[green]Removed {char.name!r} from campaign {campaign.name!r}.[/green]")
+
+
+@campaign_app.command("characters")
+def campaign_characters(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """List characters in a campaign's default character list."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    if not campaign.character_ids:
+        console.print("[yellow]No characters in this campaign's list. Add one with: campaign add-character[/yellow]")
+        return
+    table = Table("ID", "Name", "Alias", "Rank", "Tier", "HP")
+    for cid in campaign.character_ids:
+        c = store.characters.load(cid)
+        if c is None:
+            table.add_row(cid[:8], "[dim]<deleted>[/dim]", "", "", "", "")
+        else:
+            hp = c.health.score if hasattr(c.health, "score") else c.health
+            table.add_row(c.id[:8], c.name, c.alias, c.rank.value, str(c.tier), str(hp))
+    console.print(table)
+
+
 # ---------------------------------------------------------------------------
 # Session commands
 # ---------------------------------------------------------------------------
@@ -480,6 +540,44 @@ def session_create(
         campaign.session_ids.append(session.id)
         store.campaigns.save(campaign)
     console.print(f"[green]Session created: {session.id}[/green]")
+
+
+@session_app.command("add-character")
+def session_add_character(
+    session_id: str = typer.Argument(..., help="Session ID or prefix"),
+    character_id: str = typer.Argument(..., help="Character ID (from 'character list')"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Add a character participant to a session."""
+    store = _get_store(data_dir)
+    session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
+    char = _load_by_prefix_or_exact(store.characters, character_id, "Character")
+    character_id = char.id
+    if character_id in session.participants:
+        console.print(f"[yellow]{char.name!r} is already a participant in this session.[/yellow]")
+        return
+    session.participants.append(character_id)
+    store.sessions.save(session)
+    console.print(f"[green]Added {char.name!r} to session '{session.title}'.[/green]")
+
+
+@session_app.command("remove-character")
+def session_remove_character(
+    session_id: str = typer.Argument(..., help="Session ID or prefix"),
+    character_id: str = typer.Argument(..., help="Character ID"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Remove a character participant from a session."""
+    store = _get_store(data_dir)
+    session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
+    char = _load_by_prefix_or_exact(store.characters, character_id, "Character")
+    character_id = char.id
+    if character_id not in session.participants:
+        console.print(f"[yellow]{char.name!r} is not a participant in this session.[/yellow]")
+        return
+    session.participants.remove(character_id)
+    store.sessions.save(session)
+    console.print(f"[green]Removed {char.name!r} from session '{session.title}'.[/green]")
 
 
 @session_app.command("run")
