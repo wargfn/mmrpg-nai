@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -57,6 +58,15 @@ def _default_data_dir() -> str:
         except Exception:
             pass
     return "./data"
+
+
+def _mask_token(token: str) -> str:
+    token = token.strip()
+    if not token:
+        return "(empty)"
+    if len(token) <= 8:
+        return "*" * len(token)
+    return f"{token[:4]}{'*' * (len(token) - 8)}{token[-4:]}"
 
 
 # ---------------------------------------------------------------------------
@@ -1059,6 +1069,14 @@ def serve(
         raise typer.Exit(1)
 
     from mmrpg_nai.mcp.service import app as fastapi_app, init_app
+
+    cfg = _get_store(data_dir).load_config()
+    token_env = cfg.llm.api_key_env
+    token_value = os.environ.get(token_env, "")
+    if token_value.strip():
+        console.print(f"[dim]{token_env} detected: {_mask_token(token_value)}[/dim]")
+    else:
+        console.print(f"[yellow]{token_env} is not set; web chat requests will fail until it is configured.[/yellow]")
 
     init_app(data_dir)
     console.print(f"[bold]MCP Service running at http://{host}:{port}[/bold]")
