@@ -6,15 +6,21 @@ Exposes MMRPG data as REST endpoints that can be consumed by other tools
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
+from mmrpg_nai.llm.narrator import Narrator
 from mmrpg_nai.models.core import (
     Adventure,
     Campaign,
     Character,
     Equipment,
+    LogEntry,
     NarratorConfig,
     PowerSet,
     Session,
@@ -33,6 +39,40 @@ app = FastAPI(
 )
 
 _store: Store | None = None
+_active_narrators: dict[str, Narrator] = {}
+_META_RE = re.compile(r"^\s*\[(.+)\]\s*$")
+_templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+
+
+class WebParticipant(BaseModel):
+    id: str
+    name: str
+    alias: str = ""
+
+
+class WebSessionStartRequest(BaseModel):
+    campaign_id: str | None = None
+    session_id: str | None = None
+    title: str | None = None
+    participant_ids: list[str] = Field(default_factory=list)
+
+
+class WebSessionStartResponse(BaseModel):
+    session: Session
+    campaign: Campaign
+    participants: list[WebParticipant]
+    recap: str = ""
+
+
+class WebChatRequest(BaseModel):
+    message: str
+
+
+class WebChatResponse(BaseModel):
+    session_id: str
+    response: str
+    mode: str
+    log: list[LogEntry]
 
 
 def get_store() -> Store:
@@ -45,6 +85,54 @@ def init_app(data_dir: str | Path) -> None:
     """Wire the FastAPI app to the data store at *data_dir*."""
     global _store
     _store = Store(data_dir)
+    _active_narrators.clear()
+
+
+def _load_participants(store: Store, campaign: Campaign, participant_ids: list[str]) -> list[Character]:
+    ids = participant_ids or campaign.character_ids
+    participants = [c for cid in ids if (c := store.characters.load(cid)) is not None]
+    if participants:
+        return participants
+    return [c for c in store.characters.list_all() if not c.is_npc]
+
+
+def _load_source_materials(store: Store, campaign: Campaign) -> list[SourceMaterial]:
+    return [
+        m
+        for mid in campaign.source_material_ids
+        if (m := store.source_materials.load(mid)) is not None
+    ]
+
+
+def _start_narrator(
+    store: Store,
+    cfg: NarratorConfig,
+    session: Session,
+    campaign: Campaign,
+    participants: list[Character],
+) -> tuple[Narrator, str]:
+    narrator = Narrator(cfg, store)
+    narrator.start_session(
+        session,
+        campaign,
+        participants,
+        source_materials=_load_source_materials(store, campaign),
+    )
+    _active_narrators[session.id] = narrator
+
+    recap = ""
+    previous_sessions = store.sessions.find(campaign_id=campaign.id)
+    previous = next((s for s in reversed(previous_sessions) if s.id != session.id), None)
+    if previous:
+        try:
+            recap = narrator.recap_last_session(previous)
+        except Exception:
+            recap = ""
+    return narrator, recap
+
+
+def _as_web_participants(participants: list[Character]) -> list[WebParticipant]:
+    return [WebParticipant(id=p.id, name=p.name, alias=p.alias) for p in participants]
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +143,97 @@ def init_app(data_dir: str | Path) -> None:
 @app.get("/health", tags=["meta"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/", response_class=HTMLResponse, tags=["web"])
+def web_index(request: Request) -> HTMLResponse:
+    return _templates.TemplateResponse(request=request, name="index.html")
+
+
+@app.get("/web/bootstrap", tags=["web"])
+def web_bootstrap() -> dict:
+    store = get_store()
+    campaigns = store.campaigns.list_all()
+    sessions = store.sessions.list_all()
+    return {
+        "campaigns": campaigns,
+        "sessions": sessions,
+        "characters": [c for c in store.characters.list_all() if not c.is_npc],
+    }
+
+
+@app.post("/web/session/start", response_model=WebSessionStartResponse, tags=["web"])
+def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
+    store = get_store()
+    cfg = store.load_config()
+
+    if req.session_id:
+        session = store.sessions.load(req.session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        campaign = store.campaigns.load(session.campaign_id)
+        if campaign is None:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        participants = _load_participants(store, campaign, session.participants)
+    else:
+        if not req.campaign_id:
+            raise HTTPException(status_code=400, detail="campaign_id is required when starting a new session")
+        campaign = store.campaigns.load(req.campaign_id)
+        if campaign is None:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+        existing = store.sessions.find(campaign_id=campaign.id)
+        participants = _load_participants(store, campaign, req.participant_ids)
+        session = Session(
+            campaign_id=campaign.id,
+            title=req.title or f"Session {len(campaign.session_ids) + 1}",
+            session_number=len(existing) + 1,
+            participants=[p.id for p in participants],
+        )
+        store.sessions.save(session)
+        campaign.session_ids.append(session.id)
+        store.campaigns.save(campaign)
+
+    _narrator, recap = _start_narrator(store, cfg, session, campaign, participants)
+    return WebSessionStartResponse(
+        session=session,
+        campaign=campaign,
+        participants=_as_web_participants(participants),
+        recap=recap,
+    )
+
+
+@app.post("/web/session/{session_id}/chat", response_model=WebChatResponse, tags=["web"])
+def web_session_chat(session_id: str, req: WebChatRequest) -> WebChatResponse:
+    narrator = _active_narrators.get(session_id)
+    if narrator is None:
+        raise HTTPException(status_code=404, detail="Session is not active; start or resume it first")
+
+    text = req.message.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="message cannot be empty")
+
+    mode = "narrate"
+    meta_match = _META_RE.match(text)
+    try:
+        if meta_match:
+            mode = "meta"
+            response = narrator.meta_direction(meta_match.group(1).strip(), stream=False)
+        else:
+            response = narrator.narrate(text, stream=False)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    session = get_store().sessions.load(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return WebChatResponse(session_id=session_id, response=response, mode=mode, log=session.log)
+
+
+@app.post("/web/session/{session_id}/end", tags=["web"])
+def web_session_end(session_id: str) -> dict[str, bool]:
+    ended = _active_narrators.pop(session_id, None) is not None
+    return {"ended": ended}
 
 
 # ---------------------------------------------------------------------------

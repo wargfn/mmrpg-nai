@@ -22,6 +22,7 @@ It uses the **GitHub Copilot GPT-5.4** language model (configurable) to help you
 | **Adventure Templates** | Import/export adventures from a standard JSON template |
 | **PDF Source Materials** | Ingest rulebooks, bestiaries, and supplements as AI context — injected automatically each session |
 | **MCP REST Service** | FastAPI service exposing all data to other tools |
+| **Web Front End** | Browser UI for browsing campaigns/sessions and running chat sessions |
 | **Settings & Prompts** | Configure LLM settings, system prompts, and extra named prompts |
 
 ## Requirements
@@ -543,11 +544,18 @@ mmrpg-nai serve --host 0.0.0.0 --port 9000
 
 **API docs:** `http://127.0.0.1:8000/docs` (Swagger UI)
 
+**Web front end:** `http://127.0.0.1:8000/`
+
 **Available endpoints:**
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/health` | Health check |
+| GET | `/` | Web front end |
+| GET | `/web/bootstrap` | Campaign/session/character data for web UI |
+| POST | `/web/session/start` | Start new or resume existing chat session |
+| POST | `/web/session/{id}/chat` | Send chat or meta-direction message |
+| POST | `/web/session/{id}/end` | Mark in-memory web chat session ended |
 | GET/POST | `/campaigns` | List / create campaigns |
 | GET/PUT/DELETE | `/campaigns/{id}` | Get / update / delete a campaign |
 | GET/POST | `/sessions` | List / create sessions |

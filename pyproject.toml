@@ -33,6 +33,9 @@ mmrpg-nai = "mmrpg_nai.cli.main:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+mmrpg_nai = ["mcp/templates/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
