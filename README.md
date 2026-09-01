@@ -554,6 +554,7 @@ mmrpg-nai serve --host 0.0.0.0 --port 9000
 | GET | `/` | Web front end |
 | GET | `/web/bootstrap` | Campaign/session/character data for web UI |
 | POST | `/web/session/start` | Start new or resume existing chat session |
+| GET | `/web/session/{id}` | Fetch current session state/log for multi-client sync |
 | POST | `/web/session/{id}/chat` | Send chat or meta-direction message |
 | POST | `/web/session/{id}/end` | Mark in-memory web chat session ended |
 | GET/POST | `/campaigns` | List / create campaigns |

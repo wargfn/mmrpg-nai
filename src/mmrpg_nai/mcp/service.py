@@ -84,6 +84,13 @@ class WebBootstrapResponse(BaseModel):
     characters: list[Character]
 
 
+class WebSessionStateResponse(BaseModel):
+    session: Session
+    campaign: Campaign
+    participants: list[WebParticipant]
+    is_active: bool
+
+
 def get_store() -> Store:
     if _store is None:
         raise RuntimeError("Store not initialised – call init_app() first.")
@@ -106,6 +113,11 @@ def _get_session_lock(session_id: str) -> Lock:
             lock = Lock()
             _session_locks[session_id] = lock
         return lock
+
+
+def _get_active_narrator(session_id: str) -> Narrator | None:
+    with _active_narrators_lock:
+        return _active_narrators.get(session_id)
 
 
 def _load_participants(store: Store, campaign: Campaign, participant_ids: list[str]) -> list[Character]:
@@ -138,10 +150,9 @@ def _start_narrator(
         participants,
         source_materials=_load_source_materials(store, campaign),
     )
-    with _get_session_lock(session.id):
-        with _active_narrators_lock:
-            _active_narrators[session.id] = narrator
-            _session_locks.setdefault(session.id, Lock())
+    with _active_narrators_lock:
+        _active_narrators[session.id] = narrator
+        _session_locks.setdefault(session.id, Lock())
 
     recap = ""
     previous_sessions = store.sessions.find(campaign_id=campaign.id)
@@ -198,6 +209,13 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
         if campaign is None:
             raise HTTPException(status_code=404, detail="Campaign not found")
         participants = _load_participants(store, campaign, session.participants)
+        lock = _get_session_lock(session.id)
+        with lock:
+            narrator = _get_active_narrator(session.id)
+            if narrator is None:
+                _narrator, recap = _start_narrator(store, cfg, session, campaign, participants)
+            else:
+                recap = ""
     else:
         if not req.campaign_id:
             raise HTTPException(status_code=400, detail="campaign_id is required when starting a new session")
@@ -216,13 +234,30 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
         store.sessions.save(session)
         campaign.session_ids.append(session.id)
         store.campaigns.save(campaign)
-
-    _narrator, recap = _start_narrator(store, cfg, session, campaign, participants)
+        _narrator, recap = _start_narrator(store, cfg, session, campaign, participants)
     return WebSessionStartResponse(
         session=session,
         campaign=campaign,
         participants=_as_web_participants(participants),
         recap=recap,
+    )
+
+
+@app.get("/web/session/{session_id}", response_model=WebSessionStateResponse, tags=["web"])
+def web_session_state(session_id: str) -> WebSessionStateResponse:
+    store = get_store()
+    session = store.sessions.load(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    campaign = store.campaigns.load(session.campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    participants = _load_participants(store, campaign, session.participants)
+    return WebSessionStateResponse(
+        session=session,
+        campaign=campaign,
+        participants=_as_web_participants(participants),
+        is_active=_get_active_narrator(session_id) is not None,
     )
 
 

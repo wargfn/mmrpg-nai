@@ -100,10 +100,13 @@ def test_web_bootstrap(client: TestClient):
 
 
 def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    starts: list[str] = []
+
     class DummyNarrator:
         def __init__(self, cfg, store):
             self.store = store
             self.session = None
+            starts.append("init")
 
         def start_session(self, session, campaign, party, source_materials=None):
             self.session = session
@@ -148,3 +151,58 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     assert r.status_code == 200
     assert r.json()["response"] == "Meta handled: raise the tension"
     assert r.json()["mode"] == "meta"
+
+    state = client.get(f"/web/session/{session_id}")
+    assert state.status_code == 200
+    assert state.json()["session"]["id"] == session_id
+    assert state.json()["is_active"] is True
+
+    resumed = client.post("/web/session/start", json={"session_id": session_id})
+    assert resumed.status_code == 200
+    assert resumed.json()["session"]["id"] == session_id
+    assert resumed.json()["recap"] == ""
+    assert len(starts) == 1
+
+
+def test_web_multiple_sessions_isolated(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    class DummyNarrator:
+        def __init__(self, cfg, store):
+            self.store = store
+            self.session = None
+
+        def start_session(self, session, campaign, party, source_materials=None):
+            self.session = session
+
+        def recap_last_session(self, last_session):
+            return ""
+
+        def narrate(self, player_input: str, stream: bool = False):
+            self.session.log.append(LogEntry(role="player", content=player_input))
+            out = f"{self.session.id}:{player_input}"
+            self.session.log.append(LogEntry(role="narrator", content=out))
+            self.store.sessions.save(self.session)
+            return out
+
+        def meta_direction(self, direction: str, stream: bool = False):
+            return self.narrate(f"[{direction}]", stream=stream)
+
+    monkeypatch.setattr(service, "Narrator", DummyNarrator)
+    campaign = client.post("/campaigns", json={"name": "Campaign A", "description": "D"}).json()
+    character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
+
+    s1 = client.post("/web/session/start", json={"campaign_id": campaign["id"], "participant_ids": [character["id"]]}).json()
+    s2 = client.post("/web/session/start", json={"campaign_id": campaign["id"], "participant_ids": [character["id"]]}).json()
+
+    id1 = s1["session"]["id"]
+    id2 = s2["session"]["id"]
+    assert id1 != id2
+
+    client.post(f"/web/session/{id1}/chat", json={"message": "alpha"})
+    client.post(f"/web/session/{id2}/chat", json={"message": "beta"})
+
+    state1 = client.get(f"/web/session/{id1}").json()
+    state2 = client.get(f"/web/session/{id2}").json()
+    assert any(entry["content"] == "alpha" for entry in state1["session"]["log"])
+    assert not any(entry["content"] == "beta" for entry in state1["session"]["log"])
+    assert any(entry["content"] == "beta" for entry in state2["session"]["log"])
+    assert not any(entry["content"] == "alpha" for entry in state2["session"]["log"])

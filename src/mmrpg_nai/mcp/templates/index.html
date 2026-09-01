@@ -34,6 +34,9 @@
       <label for="resumeSession">Resume session</label>
       <select id="resumeSession"></select>
       <button id="resumeBtn">Resume Session</button>
+      <label for="attachSessionId">Attach by session ID</label>
+      <input id="attachSessionId" placeholder="Full session ID">
+      <button id="attachBtn">Attach to Session</button>
 
       <p id="active" class="status">No active session.</p>
     </section>
@@ -49,6 +52,8 @@
 
   <script>
     let activeSessionId = null;
+    let renderedLogCount = 0;
+    let lastRecap = "";
 
     const campaignEl = document.getElementById("campaign");
     const resumeEl = document.getElementById("resumeSession");
@@ -64,6 +69,36 @@
       div.appendChild(document.createTextNode(content ?? ""));
       chatLog.appendChild(div);
       chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function setActiveStatus(session, isActive) {
+      activeSessionId = session.id;
+      const status = isActive ? "active" : "inactive";
+      activeLabel.textContent = `Session: ${session.title} (${session.id.slice(0, 8)}) - ${status}`;
+    }
+
+    function renderLog(entries, reset = false) {
+      if (reset || entries.length < renderedLogCount) {
+        chatLog.replaceChildren();
+        renderedLogCount = 0;
+      }
+      for (let i = renderedLogCount; i < entries.length; i += 1) {
+        const entry = entries[i];
+        appendLine(entry.role, entry.content);
+      }
+      renderedLogCount = entries.length;
+    }
+
+    async function fetchSessionState(reset = false) {
+      if (!activeSessionId) return;
+      const r = await fetch(`/web/session/${activeSessionId}`);
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not fetch session state", "sys");
+        return;
+      }
+      setActiveStatus(data.session, data.is_active);
+      renderLog(data.session.log, reset);
     }
 
     async function loadBootstrap() {
@@ -100,13 +135,15 @@
       }
 
       activeSessionId = data.session.id;
-      activeLabel.textContent = `Active session: ${data.session.title} (${activeSessionId.slice(0, 8)})`;
-      chatLog.replaceChildren();
-      if (data.recap) {
-        appendLine("Previously", data.recap, "sys");
-      }
-      for (const entry of data.session.log) {
-        appendLine(entry.role, entry.content);
+      setActiveStatus(data.session, true);
+      renderedLogCount = 0;
+      lastRecap = data.recap || "";
+      if (lastRecap) {
+        chatLog.replaceChildren();
+        appendLine("Previously", lastRecap, "sys");
+        renderLog(data.session.log, false);
+      } else {
+        renderLog(data.session.log, true);
       }
       await loadBootstrap();
     }
@@ -115,7 +152,6 @@
       const input = document.getElementById("chatInput");
       const text = input.value.trim();
       if (!activeSessionId || !text) return;
-      appendLine("You", text);
       input.value = "";
 
       const r = await fetch(`/web/session/${activeSessionId}/chat`, {
@@ -128,7 +164,8 @@
         appendLine("System", data.detail || "Chat error", "sys");
         return;
       }
-      appendLine("Narrator", data.response, data.mode === "meta" ? "sys" : "");
+      renderLog(data.log, false);
+      await fetchSessionState(false);
     }
 
     document.getElementById("startBtn").addEventListener("click", async () => {
@@ -142,10 +179,24 @@
       await startSession({ session_id: resumeEl.value });
     });
 
+    document.getElementById("attachBtn").addEventListener("click", async () => {
+      const attachInput = document.getElementById("attachSessionId");
+      const id = attachInput.value.trim();
+      if (!id) return;
+      activeSessionId = id;
+      renderedLogCount = 0;
+      lastRecap = "";
+      await fetchSessionState(true);
+    });
+
     document.getElementById("sendBtn").addEventListener("click", sendMessage);
     document.getElementById("chatInput").addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendMessage();
     });
+
+    setInterval(() => {
+      fetchSessionState(false);
+    }, 1500);
 
     loadBootstrap();
   </script>
