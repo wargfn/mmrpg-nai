@@ -213,7 +213,7 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
         with lock:
             narrator = _get_active_narrator(session.id)
             if narrator is None:
-                _narrator, recap = _start_narrator(store, cfg, session, campaign, participants)
+                _, recap = _start_narrator(store, cfg, session, campaign, participants)
             else:
                 recap = ""
     else:
@@ -225,16 +225,17 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
 
         existing = store.sessions.find(campaign_id=campaign.id)
         participants = _load_participants(store, campaign, req.participant_ids)
+        next_session_number = len(existing) + 1
         session = Session(
             campaign_id=campaign.id,
-            title=req.title or f"Session {len(campaign.session_ids) + 1}",
-            session_number=len(existing) + 1,
+            title=req.title or f"Session {next_session_number}",
+            session_number=next_session_number,
             participants=[p.id for p in participants],
         )
         store.sessions.save(session)
         campaign.session_ids.append(session.id)
         store.campaigns.save(campaign)
-        _narrator, recap = _start_narrator(store, cfg, session, campaign, participants)
+        _, recap = _start_narrator(store, cfg, session, campaign, participants)
     return WebSessionStartResponse(
         session=session,
         campaign=campaign,
@@ -263,6 +264,7 @@ def web_session_state(session_id: str) -> WebSessionStateResponse:
 
 @app.post("/web/session/{session_id}/chat", response_model=WebChatResponse, tags=["web"])
 def web_session_chat(session_id: str, req: WebChatRequest) -> WebChatResponse:
+    store = get_store()
     text = req.message.strip()
     if not text:
         raise HTTPException(status_code=400, detail="message cannot be empty")
@@ -285,7 +287,7 @@ def web_session_chat(session_id: str, req: WebChatRequest) -> WebChatResponse:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        session = get_store().sessions.load(session_id)
+        session = store.sessions.load(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
     return WebChatResponse(session_id=session_id, response=response, mode=mode, log=session.log)
@@ -293,9 +295,10 @@ def web_session_chat(session_id: str, req: WebChatRequest) -> WebChatResponse:
 
 @app.post("/web/session/{session_id}/end", tags=["web"])
 def web_session_end(session_id: str) -> dict[str, bool]:
-    with _active_narrators_lock:
-        ended = _active_narrators.pop(session_id, None) is not None
-        _session_locks.pop(session_id, None)
+    lock = _get_session_lock(session_id)
+    with lock:
+        with _active_narrators_lock:
+            ended = _active_narrators.pop(session_id, None) is not None
     return {"ended": ended}
 
 

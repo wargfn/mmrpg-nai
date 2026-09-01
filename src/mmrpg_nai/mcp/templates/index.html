@@ -54,6 +54,7 @@
     let activeSessionId = null;
     let renderedLogCount = 0;
     let lastRecap = "";
+    let pollHandle = null;
 
     const campaignEl = document.getElementById("campaign");
     const resumeEl = document.getElementById("resumeSession");
@@ -91,6 +92,7 @@
 
     async function fetchSessionState(reset = false) {
       if (!activeSessionId) return;
+      if (document.visibilityState !== "visible") return;
       const r = await fetch(`/web/session/${activeSessionId}`);
       const data = await r.json();
       if (!r.ok) {
@@ -165,7 +167,6 @@
         return;
       }
       renderLog(data.log, false);
-      await fetchSessionState(false);
     }
 
     document.getElementById("startBtn").addEventListener("click", async () => {
@@ -194,10 +195,31 @@
       if (e.key === "Enter") sendMessage();
     });
 
-    setInterval(() => {
-      fetchSessionState(false);
-    }, 1500);
+    async function pollLoop() {
+      await fetchSessionState(false);
+      pollHandle = setTimeout(pollLoop, 1500);
+    }
 
+    function startPolling() {
+      if (pollHandle !== null) return;
+      pollHandle = setTimeout(pollLoop, 1500);
+    }
+
+    function stopPolling() {
+      if (pollHandle === null) return;
+      clearTimeout(pollHandle);
+      pollHandle = null;
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    });
+
+    startPolling();
     loadBootstrap();
   </script>
 </body>
