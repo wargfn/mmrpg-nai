@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from threading import Lock
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -40,6 +41,8 @@ app = FastAPI(
 
 _store: Store | None = None
 _active_narrators: dict[str, Narrator] = {}
+_active_narrators_lock = Lock()
+_session_locks: dict[str, Lock] = {}
 _META_RE = re.compile(r"^\s*\[(.+)\]\s*$")
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
@@ -75,6 +78,12 @@ class WebChatResponse(BaseModel):
     log: list[LogEntry]
 
 
+class WebBootstrapResponse(BaseModel):
+    campaigns: list[Campaign]
+    sessions: list[Session]
+    characters: list[Character]
+
+
 def get_store() -> Store:
     if _store is None:
         raise RuntimeError("Store not initialised – call init_app() first.")
@@ -85,7 +94,18 @@ def init_app(data_dir: str | Path) -> None:
     """Wire the FastAPI app to the data store at *data_dir*."""
     global _store
     _store = Store(data_dir)
-    _active_narrators.clear()
+    with _active_narrators_lock:
+        _active_narrators.clear()
+        _session_locks.clear()
+
+
+def _get_session_lock(session_id: str) -> Lock:
+    with _active_narrators_lock:
+        lock = _session_locks.get(session_id)
+        if lock is None:
+            lock = Lock()
+            _session_locks[session_id] = lock
+        return lock
 
 
 def _load_participants(store: Store, campaign: Campaign, participant_ids: list[str]) -> list[Character]:
@@ -118,7 +138,9 @@ def _start_narrator(
         participants,
         source_materials=_load_source_materials(store, campaign),
     )
-    _active_narrators[session.id] = narrator
+    with _active_narrators_lock:
+        _active_narrators[session.id] = narrator
+        _session_locks.setdefault(session.id, Lock())
 
     recap = ""
     previous_sessions = store.sessions.find(campaign_id=campaign.id)
@@ -150,16 +172,16 @@ def web_index(request: Request) -> HTMLResponse:
     return _templates.TemplateResponse(request=request, name="index.html")
 
 
-@app.get("/web/bootstrap", tags=["web"])
-def web_bootstrap() -> dict:
+@app.get("/web/bootstrap", response_model=WebBootstrapResponse, tags=["web"])
+def web_bootstrap() -> WebBootstrapResponse:
     store = get_store()
     campaigns = store.campaigns.list_all()
     sessions = store.sessions.list_all()
-    return {
-        "campaigns": campaigns,
-        "sessions": sessions,
-        "characters": [c for c in store.characters.list_all() if not c.is_npc],
-    }
+    return WebBootstrapResponse(
+        campaigns=campaigns,
+        sessions=sessions,
+        characters=[c for c in store.characters.list_all() if not c.is_npc],
+    )
 
 
 @app.post("/web/session/start", response_model=WebSessionStartResponse, tags=["web"])
@@ -205,34 +227,39 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
 
 @app.post("/web/session/{session_id}/chat", response_model=WebChatResponse, tags=["web"])
 def web_session_chat(session_id: str, req: WebChatRequest) -> WebChatResponse:
-    narrator = _active_narrators.get(session_id)
-    if narrator is None:
-        raise HTTPException(status_code=404, detail="Session is not active; start or resume it first")
-
     text = req.message.strip()
     if not text:
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
     mode = "narrate"
     meta_match = _META_RE.match(text)
-    try:
-        if meta_match:
-            mode = "meta"
-            response = narrator.meta_direction(meta_match.group(1).strip(), stream=False)
-        else:
-            response = narrator.narrate(text, stream=False)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    lock = _get_session_lock(session_id)
+    with lock:
+        with _active_narrators_lock:
+            narrator = _active_narrators.get(session_id)
+        if narrator is None:
+            raise HTTPException(status_code=404, detail="Session is not active; start or resume it first")
 
-    session = get_store().sessions.load(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+        try:
+            if meta_match:
+                mode = "meta"
+                response = narrator.meta_direction(meta_match.group(1).strip(), stream=False)
+            else:
+                response = narrator.narrate(text, stream=False)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        session = get_store().sessions.load(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
     return WebChatResponse(session_id=session_id, response=response, mode=mode, log=session.log)
 
 
 @app.post("/web/session/{session_id}/end", tags=["web"])
 def web_session_end(session_id: str) -> dict[str, bool]:
-    ended = _active_narrators.pop(session_id, None) is not None
+    with _active_narrators_lock:
+        ended = _active_narrators.pop(session_id, None) is not None
+        _session_locks.pop(session_id, None)
     return {"ended": ended}
 
 
