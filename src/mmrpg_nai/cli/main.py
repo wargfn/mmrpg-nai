@@ -66,6 +66,8 @@ def _mask_token(token: str) -> str:
         return "(empty)"
     if len(token) <= 8:
         return "*" * len(token)
+    if len(token) <= 12:
+        return f"{token[:2]}{'*' * (len(token) - 4)}{token[-2:]}"
     return f"{token[:4]}{'*' * (len(token) - 8)}{token[-4:]}"
 
 

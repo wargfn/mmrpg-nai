@@ -61,7 +61,7 @@
       const label = document.createElement("strong");
       label.textContent = `${role}: `;
       div.appendChild(label);
-      div.appendChild(document.createTextNode(content));
+      div.appendChild(document.createTextNode(content ?? ""));
       chatLog.appendChild(div);
       chatLog.scrollTop = chatLog.scrollHeight;
     }

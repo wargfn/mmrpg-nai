@@ -138,9 +138,10 @@ def _start_narrator(
         participants,
         source_materials=_load_source_materials(store, campaign),
     )
-    with _active_narrators_lock:
-        _active_narrators[session.id] = narrator
-        _session_locks.setdefault(session.id, Lock())
+    with _get_session_lock(session.id):
+        with _active_narrators_lock:
+            _active_narrators[session.id] = narrator
+            _session_locks.setdefault(session.id, Lock())
 
     recap = ""
     previous_sessions = store.sessions.find(campaign_id=campaign.id)
