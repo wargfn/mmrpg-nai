@@ -77,7 +77,6 @@
         <button id="updateUserBtn">Update User</button>
         <button id="deleteUserBtn">Delete User</button>
         <button id="refreshUsersBtn">Refresh Users</button>
-        <div id="usersOutput" class="menu-output"></div>
       </div>
 
       <div id="campaignsPanel" class="menu-panel hidden">
@@ -94,7 +93,6 @@
         <input id="campaignDescription" placeholder="Campaign description">
         <button id="createCampaignBtn">Create Campaign</button>
         <button id="refreshCampaignsBtn">Refresh Campaigns</button>
-        <div id="campaignsOutput" class="menu-output"></div>
       </div>
 
       <div id="sessionsPanel" class="menu-panel hidden">
@@ -109,8 +107,6 @@
         <button id="openSessionOptionsBtn">Open Session Start Options</button>
         <button id="refreshActiveSessionsBtn">Refresh Active Sessions</button>
         <button id="endActiveSessionBtn">End Active Session</button>
-        <div id="sessionsOutput" class="menu-output"></div>
-        <div id="sessionLogOutput" class="menu-output"></div>
       </div>
     </section>
 
@@ -204,21 +200,20 @@
         }
       }
 
-      function writeMenuOutput(elementId, data) {
-        const el = document.getElementById(elementId);
-        el.textContent = JSON.stringify(data, null, 2);
+      function writeMenuOutput(title, data) {
+        appendLine(title, JSON.stringify(data, null, 2), "sys");
       }
 
       function writeSessionLogOutput(data) {
-        const el = document.getElementById("sessionLogOutput");
         const log = Array.isArray(data?.log) ? data.log : [];
         if (log.length === 0) {
-          el.textContent = "No log entries for this session.";
+          appendLine("Session Log", "No log entries for this session.", "sys");
           return;
         }
-        el.textContent = log
+        const content = log
           .map((entry, i) => `${i + 1}. [${entry.role || "unknown"}] ${entry.content || ""}`)
           .join("\\n");
+        appendLine("Session Log", content, "sys");
       }
     }
 
@@ -390,7 +385,7 @@
     async function listUsers() {
       const r = await fetch("/users");
       const data = await r.json();
-      writeMenuOutput("usersOutput", data);
+      writeMenuOutput("Users List", data);
     }
 
     async function showUser() {
@@ -398,13 +393,13 @@
       if (!id) return;
       const r = await fetch(`/users/${id}`);
       const data = await r.json();
-      writeMenuOutput("usersOutput", data);
+      writeMenuOutput("User Detail", data);
     }
 
     async function listCampaigns() {
       const r = await fetch("/campaigns");
       const data = await r.json();
-      writeMenuOutput("campaignsOutput", data);
+      writeMenuOutput("Campaigns List", data);
     }
 
     async function showCampaign() {
@@ -412,13 +407,13 @@
       if (!id) return;
       const r = await fetch(`/campaigns/${id}`);
       const data = await r.json();
-      writeMenuOutput("campaignsOutput", data);
+      writeMenuOutput("Campaign Detail", data);
     }
 
     async function listSessions() {
       const r = await fetch("/sessions");
       const data = await r.json();
-      writeMenuOutput("sessionsOutput", data);
+      writeMenuOutput("Sessions List", data);
     }
 
     async function showSession() {
@@ -426,7 +421,7 @@
       if (!id) return;
       const r = await fetch(`/sessions/${id}`);
       const data = await r.json();
-      writeMenuOutput("sessionsOutput", data);
+      writeMenuOutput("Session Detail", data);
     }
 
     async function showSessionLog() {
