@@ -21,6 +21,33 @@ _MAX_RETRIES = 2
 _RETRY_DELAY = 2.0  # seconds between retries
 
 
+def _prepare_messages(cfg: LLMConfig, messages: list[dict]) -> list[dict]:
+    """Provider-specific message normalization before API calls."""
+    if cfg.provider != "google_ai_studio":
+        return messages
+
+    normalized: list[dict] = []
+    seen_first_system = False
+    for m in messages:
+        role = m.get("role", "")
+        content = m.get("content", "")
+        if role == "system":
+            if not seen_first_system:
+                normalized.append(m)
+                seen_first_system = True
+            else:
+                rewritten = content
+                if not rewritten.startswith("[OUT-OF-GAME NARRATOR DIRECTION]:"):
+                    rewritten = f"[OUT-OF-GAME NARRATOR DIRECTION]: {rewritten}"
+                normalized.append({
+                    "role": "user",
+                    "content": rewritten,
+                })
+            continue
+        normalized.append(m)
+    return normalized
+
+
 def _provider_label(provider: str) -> str:
     labels = {
         "google_ai_studio": "Google AI Studio",
@@ -101,9 +128,10 @@ class LLMClient:
         """
         uses_completion_tokens = self.cfg.model.startswith(("gpt-5.", "gpt-5-"))
         token_param = "max_completion_tokens" if uses_completion_tokens else "max_tokens"
+        request_messages = _prepare_messages(self.cfg, messages)
         kwargs: dict = dict(
             model=self.cfg.model,
-            messages=messages,
+            messages=request_messages,
             temperature=self.cfg.temperature,
             stream=stream,
         )
