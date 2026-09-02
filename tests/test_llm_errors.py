@@ -152,10 +152,28 @@ def test_complete_auth_error_not_retried(cfg):
         assert mock_openai.chat.completions.create.call_count == 1
 
 
-def test_complete_uses_max_tokens_parameter(cfg):
+def test_complete_uses_max_completion_tokens_for_gpt5(cfg):
     with patch.dict(os.environ, {"TEST_OPENAI_KEY": "fake-key"}):
         client = LLMClient.__new__(LLMClient)
         client.cfg = cfg
+        mock_openai = MagicMock()
+        resp = MagicMock()
+        resp.choices[0].message.content = "ok"
+        mock_openai.chat.completions.create.return_value = resp
+        client._client = mock_openai
+
+        result = client.complete([{"role": "user", "content": "hi"}], stream=False)
+
+    assert result == "ok"
+    kwargs = mock_openai.chat.completions.create.call_args.kwargs
+    assert kwargs["max_completion_tokens"] == cfg.max_tokens
+    assert "max_tokens" not in kwargs
+
+
+def test_complete_uses_max_tokens_for_non_gpt5(cfg):
+    with patch.dict(os.environ, {"TEST_OPENAI_KEY": "fake-key"}):
+        client = LLMClient.__new__(LLMClient)
+        client.cfg = cfg.model_copy(update={"model": "gpt-4o"})
         mock_openai = MagicMock()
         resp = MagicMock()
         resp.choices[0].message.content = "ok"

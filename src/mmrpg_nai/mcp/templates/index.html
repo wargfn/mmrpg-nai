@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MMRPG Narrator Web</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 1rem; display: grid; grid-template-columns: 320px 1fr; gap: 1rem; }
+    .card { background: #1e293b; border-radius: 10px; padding: 1rem; }
+    .hidden { display: none; }
+    .menu-bar { display: flex; gap: 0.4rem; margin: 0.8rem 0; }
+    .menu-bar button { margin-bottom: 0; }
+    .menu-panel { border: 1px solid #334155; border-radius: 8px; padding: 0.7rem; margin-bottom: 0.7rem; }
+    .action-row { display: flex; gap: 0.4rem; }
+    .menu-output { margin-top: 0.6rem; padding: 0.5rem; background: #020617; border: 1px solid #334155; border-radius: 8px; font-size: 0.85rem; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+    h1, h2 { margin-top: 0; }
+    label, select, input, button { display: block; width: 100%; margin-bottom: 0.6rem; }
+    select, input, button { padding: 0.55rem; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; }
+    button { cursor: pointer; background: #2563eb; border: none; }
+    #chatLog { height: 60vh; overflow-y: auto; background: #020617; border: 1px solid #334155; border-radius: 8px; padding: 0.8rem; }
+    .msg { margin-bottom: 0.8rem; white-space: pre-wrap; }
+    .msg strong { color: #93c5fd; }
+    .sys { color: #fbbf24; }
+    .status { color: #94a3b8; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>MMRPG Narrator Web</h1>
+      <p class="status">Browse campaigns/sessions and run chat sessions.</p>
+      <label for="campaign">Campaign</label>
+      <select id="campaign"></select>
+      <label for="sessionUsers">Players (Ctrl/Cmd-click for multi-select)</label>
+      <select id="sessionUsers" multiple size="5"></select>
+      <button id="sessionStartBtn">Session Start</button>
+
+      <div id="sessionStartOptions" class="hidden">
+        <label for="sessionTitle">Session title</label>
+        <input id="sessionTitle" placeholder="Session title">
+        <button id="startBtn">Start New Session</button>
+        <label for="resumeSession">Resume session</label>
+        <select id="resumeSession"></select>
+        <button id="resumeBtn">Resume Session</button>
+        <label for="attachActiveSession">Attach to active session</label>
+        <select id="attachActiveSession"></select>
+        <button id="attachBtn">Attach to Active Session</button>
+      </div>
+
+      <p id="active" class="status">No active session.</p>
+
+      <hr>
+      <div class="menu-bar">
+        <button id="menuUsersBtn">Users</button>
+        <button id="menuCampaignsBtn">Campaigns</button>
+        <button id="menuSessionsBtn">Sessions</button>
+      </div>
+
+      <div id="usersPanel" class="menu-panel hidden">
+        <h2>Users</h2>
+        <label for="userSelect">Existing users</label>
+        <select id="userSelect"></select>
+        <div class="action-row">
+          <button id="listUsersBtn">List Users</button>
+          <button id="showUserBtn">Show User</button>
+        </div>
+        <label for="userFirstName">First name</label>
+        <input id="userFirstName" placeholder="First name">
+        <label for="userLastName">Last name (optional)</label>
+        <input id="userLastName" placeholder="Last name">
+        <label for="userEmail">Email</label>
+        <input id="userEmail" placeholder="Email">
+        <label for="userNotes">Notes</label>
+        <input id="userNotes" placeholder="Notes">
+        <button id="createUserBtn">Create User</button>
+        <button id="updateUserBtn">Update User</button>
+        <button id="deleteUserBtn">Delete User</button>
+        <button id="refreshUsersBtn">Refresh Users</button>
+      </div>
+
+      <div id="campaignsPanel" class="menu-panel hidden">
+        <h2>Campaigns</h2>
+        <label for="campaignMenuSelect">Existing campaigns</label>
+        <select id="campaignMenuSelect"></select>
+        <div class="action-row">
+          <button id="listCampaignsBtn">List Campaigns</button>
+          <button id="showCampaignBtn">Show Campaign</button>
+        </div>
+        <label for="campaignName">Campaign name</label>
+        <input id="campaignName" placeholder="Campaign name">
+        <label for="campaignDescription">Campaign description</label>
+        <input id="campaignDescription" placeholder="Campaign description">
+        <button id="createCampaignBtn">Create Campaign</button>
+        <button id="refreshCampaignsBtn">Refresh Campaigns</button>
+      </div>
+
+      <div id="sessionsPanel" class="menu-panel hidden">
+        <h2>Sessions</h2>
+        <label for="sessionMenuSelect">Existing sessions</label>
+        <select id="sessionMenuSelect"></select>
+        <div class="action-row">
+          <button id="listSessionsBtn">List Sessions</button>
+          <button id="showSessionBtn">Show Session</button>
+        </div>
+        <button id="showSessionLogBtn">Show Session Log</button>
+        <button id="openSessionOptionsBtn">Open Session Start Options</button>
+        <button id="refreshActiveSessionsBtn">Refresh Active Sessions</button>
+        <button id="endActiveSessionBtn">End Active Session</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Chat</h2>
+      <div id="chatLog"></div>
+      <label for="chatInput">Message</label>
+      <input id="chatInput" placeholder="Type an action, dialogue, or [meta direction]">
+      <button id="sendBtn">Send</button>
+    </section>
+  </div>
+
+  <script>
+    let activeSessionId = null;
+    let renderedLogCount = 0;
+    let lastRecap = "";
+    let pollHandle = null;
+    let pollingEnabled = false;
+
+    const campaignEl = document.getElementById("campaign");
+    const resumeEl = document.getElementById("resumeSession");
+    const attachActiveSessionEl = document.getElementById("attachActiveSession");
+    const sessionUsersEl = document.getElementById("sessionUsers");
+    const chatLog = document.getElementById("chatLog");
+    const activeLabel = document.getElementById("active");
+    const sessionStartOptionsEl = document.getElementById("sessionStartOptions");
+    const campaignMenuSelectEl = document.getElementById("campaignMenuSelect");
+    const sessionMenuSelectEl = document.getElementById("sessionMenuSelect");
+    const userSelectEl = document.getElementById("userSelect");
+    const userFirstNameEl = document.getElementById("userFirstName");
+    const userLastNameEl = document.getElementById("userLastName");
+    const userEmailEl = document.getElementById("userEmail");
+    const userNotesEl = document.getElementById("userNotes");
+
+    let cachedUsers = [];
+
+    function appendLine(role, content, cls = "") {
+      const div = document.createElement("div");
+      div.className = `msg ${cls}`;
+      const label = document.createElement("strong");
+      label.textContent = `${role}: `;
+      div.appendChild(label);
+      div.appendChild(document.createTextNode(content ?? ""));
+      chatLog.appendChild(div);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function appendSessionContext(session, campaign, users, participants) {
+      if (!session || !campaign) return;
+      const userNames = (users || [])
+        .map((u) => `${u.first_name || ""} ${u.last_name || ""}`.trim())
+        .filter((n) => n)
+        .join(", ") || "—";
+      const partyNames = (participants || [])
+        .map((p) => p.name)
+        .filter((n) => n)
+        .join(", ") || "—";
+      appendLine("Session", `${session.title} (#${session.session_number})`, "sys");
+      appendLine("Campaign", campaign.name, "sys");
+      appendLine("Players", userNames, "sys");
+      appendLine("Party", partyNames, "sys");
+    }
+
+    function setActiveStatus(session, isActive) {
+      activeSessionId = session.id;
+      const status = isActive ? "active" : "inactive";
+      activeLabel.textContent = `Session: ${session.title} (${session.id.slice(0, 8)}) - ${status}`;
+    }
+
+    function renderLog(entries, reset = false) {
+      const safeEntries = Array.isArray(entries) ? entries : [];
+      if (reset || safeEntries.length < renderedLogCount) {
+        chatLog.replaceChildren();
+        renderedLogCount = 0;
+      }
+      for (let i = renderedLogCount; i < safeEntries.length; i += 1) {
+        const entry = safeEntries[i];
+        appendLine(entry.role, entry.content);
+      }
+      renderedLogCount = safeEntries.length;
+    }
+
+    function showMenuPanel(panelId) {
+      const ids = ["usersPanel", "campaignsPanel", "sessionsPanel"];
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (id === panelId) {
+          el.classList.toggle("hidden");
+        } else {
+          el.classList.add("hidden");
+        }
+      }
+    }
+
+    function writeMenuOutput(title, data) {
+      appendLine(title, JSON.stringify(data, null, 2), "sys");
+    }
+
+    function writeSessionLogOutput(data) {
+      const log = Array.isArray(data?.log) ? data.log : [];
+      if (log.length === 0) {
+        appendLine("Session Log", "No log entries for this session.", "sys");
+        return;
+      }
+      const content = log
+        .map((entry, i) => `${i + 1}. [${entry.role || "unknown"}] ${entry.content || ""}`)
+        .join("\\n");
+      appendLine("Session Log", content, "sys");
+    }
+
+    async function fetchSessionState(reset = false) {
+      if (!activeSessionId) return;
+      if (document.visibilityState !== "visible") return;
+      const r = await fetch(`/web/session/${activeSessionId}`);
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not fetch session state", "sys");
+        return;
+      }
+      setActiveStatus(data.session, data.is_active);
+      if (reset) {
+        chatLog.replaceChildren();
+        renderedLogCount = 0;
+        appendSessionContext(data.session, data.campaign, data.users, data.participants);
+        renderLog(data.session.log, false);
+        return;
+      }
+      renderLog(data.session.log, false);
+    }
+
+    async function loadActiveSessions() {
+      const r = await fetch("/web/active-sessions");
+      const data = await r.json();
+      if (!r.ok) return;
+      attachActiveSessionEl.innerHTML = "";
+      for (const s of data.sessions || []) {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = `${s.title} (#${s.session_number}, ${s.id.slice(0, 8)})`;
+        attachActiveSessionEl.appendChild(opt);
+      }
+    }
+
+    async function loadBootstrap() {
+      const r = await fetch("/web/bootstrap");
+      const data = await r.json();
+
+      campaignEl.innerHTML = "";
+      campaignMenuSelectEl.innerHTML = "";
+      for (const c of data.campaigns) {
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = `${c.name} (${c.id.slice(0, 8)})`;
+        campaignEl.appendChild(opt);
+        const menuOpt = document.createElement("option");
+        menuOpt.value = c.id;
+        menuOpt.textContent = `${c.name} (${c.id.slice(0, 8)})`;
+        campaignMenuSelectEl.appendChild(menuOpt);
+      }
+
+      resumeEl.innerHTML = "";
+      sessionMenuSelectEl.innerHTML = "";
+      for (const s of data.sessions) {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = `${s.title} (${s.id.slice(0, 8)})`;
+        resumeEl.appendChild(opt);
+        const menuOpt = document.createElement("option");
+        menuOpt.value = s.id;
+        menuOpt.textContent = `${s.title} (${s.id.slice(0, 8)})`;
+        sessionMenuSelectEl.appendChild(menuOpt);
+      }
+
+      cachedUsers = data.users || [];
+      userSelectEl.innerHTML = "";
+      sessionUsersEl.innerHTML = "";
+      for (const u of cachedUsers) {
+        const opt = document.createElement("option");
+        opt.value = u.id;
+        const last = u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "never";
+        const displayName = `${u.first_name} ${u.last_name || ""}`.trim();
+        opt.textContent = `${displayName} (${last})`;
+        userSelectEl.appendChild(opt);
+
+        const sessOpt = document.createElement("option");
+        sessOpt.value = u.id;
+        sessOpt.textContent = `${displayName} (${u.id.slice(0, 8)})`;
+        sessionUsersEl.appendChild(sessOpt);
+      }
+      fillUserFormFromSelection();
+      await loadActiveSessions();
+    }
+
+    async function startSession(payload) {
+      const r = await fetch("/web/session/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not start session", "sys");
+        return;
+      }
+
+      activeSessionId = data.session.id;
+      setActiveStatus(data.session, true);
+      renderedLogCount = 0;
+      lastRecap = data.recap || "";
+      chatLog.replaceChildren();
+      appendSessionContext(data.session, data.campaign, data.users || [], data.participants || []);
+      if (lastRecap) {
+        appendLine("Previously", lastRecap, "sys");
+      }
+      renderLog(data.session.log, false);
+      await loadBootstrap();
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById("chatInput");
+      const text = input.value.trim();
+      if (!activeSessionId || !text) return;
+      input.value = "";
+
+      const r = await fetch(`/web/session/${activeSessionId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Chat error", "sys");
+        return;
+      }
+      const beforeCount = renderedLogCount;
+      renderLog(data.log, false);
+      if (renderedLogCount === beforeCount) {
+        appendLine("You", text);
+        appendLine("Narrator", data.response, data.mode === "meta" ? "sys" : "");
+      }
+    }
+
+    async function createCampaign() {
+      const name = document.getElementById("campaignName").value.trim();
+      const description = document.getElementById("campaignDescription").value.trim();
+      if (!name) {
+        appendLine("System", "Campaign name is required", "sys");
+        return;
+      }
+      const r = await fetch("/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not create campaign", "sys");
+        return;
+      }
+      await loadBootstrap();
+      campaignEl.value = data.id;
+    }
+
+    async function endActiveSession() {
+      if (!activeSessionId) return;
+      const r = await fetch(`/web/session/${activeSessionId}/end`, { method: "POST" });
+      const data = await r.json();
+      if (!r.ok || !data.ended) {
+        appendLine("System", "Could not end active session", "sys");
+        return;
+      }
+      await loadActiveSessions();
+      await fetchSessionState(false);
+    }
+
+    async function listUsers() {
+      const r = await fetch("/users");
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not list users", "sys");
+        return;
+      }
+      await loadBootstrap();
+      writeMenuOutput("Users List", data);
+    }
+
+    async function showUser() {
+      const id = userSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/users/${id}`);
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not show user", "sys");
+        return;
+      }
+      userSelectEl.value = data.id;
+      fillUserFormFromSelection();
+      writeMenuOutput("User Detail", data);
+    }
+
+    async function listCampaigns() {
+      const r = await fetch("/campaigns");
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not list campaigns", "sys");
+        return;
+      }
+      await loadBootstrap();
+      writeMenuOutput("Campaigns List", data);
+    }
+
+    async function showCampaign() {
+      const id = campaignMenuSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/campaigns/${id}`);
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not show campaign", "sys");
+        return;
+      }
+      campaignMenuSelectEl.value = data.id;
+      campaignEl.value = data.id;
+      writeMenuOutput("Campaign Detail", data);
+    }
+
+    async function listSessions() {
+      const r = await fetch("/sessions");
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not list sessions", "sys");
+        return;
+      }
+      await loadBootstrap();
+      writeMenuOutput("Sessions List", data);
+    }
+
+    async function showSession() {
+      const id = sessionMenuSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/sessions/${id}`);
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not show session", "sys");
+        return;
+      }
+      sessionMenuSelectEl.value = data.id;
+      resumeEl.value = data.id;
+      writeMenuOutput("Session Detail", data);
+    }
+
+    async function showSessionLog() {
+      const id = sessionMenuSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/sessions/${id}`);
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not show session log", "sys");
+        return;
+      }
+      sessionMenuSelectEl.value = data.id;
+      resumeEl.value = data.id;
+      writeSessionLogOutput(data);
+    }
+
+    document.getElementById("sessionStartBtn").addEventListener("click", async () => {
+      sessionStartOptionsEl.classList.toggle("hidden");
+      if (!sessionStartOptionsEl.classList.contains("hidden")) {
+        await loadActiveSessions();
+      }
+    });
+
+    document.getElementById("openSessionOptionsBtn").addEventListener("click", async () => {
+      sessionStartOptionsEl.classList.remove("hidden");
+      await loadActiveSessions();
+    });
+
+    document.getElementById("startBtn").addEventListener("click", async () => {
+      await startSession({
+        campaign_id: campaignEl.value,
+        title: document.getElementById("sessionTitle").value || null,
+        user_ids: Array.from(sessionUsersEl.selectedOptions).map((o) => o.value),
+      });
+    });
+
+    document.getElementById("resumeBtn").addEventListener("click", async () => {
+      await startSession({ session_id: resumeEl.value });
+    });
+
+    document.getElementById("attachBtn").addEventListener("click", async () => {
+      const id = attachActiveSessionEl.value;
+      if (!id) return;
+      activeSessionId = id;
+      renderedLogCount = 0;
+      lastRecap = "";
+      chatLog.replaceChildren();
+      await fetchSessionState(true);
+    });
+
+    document.getElementById("sendBtn").addEventListener("click", sendMessage);
+    document.getElementById("chatInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendMessage();
+    });
+
+    async function pollLoop() {
+      try {
+        await fetchSessionState(false);
+        await loadActiveSessions();
+      } finally {
+        if (pollingEnabled) {
+          pollHandle = setTimeout(pollLoop, 1500);
+        } else {
+          pollHandle = null;
+        }
+      }
+    }
+
+    function startPolling() {
+      pollingEnabled = true;
+      if (pollHandle !== null) return;
+      pollHandle = setTimeout(pollLoop, 1500);
+    }
+
+    function stopPolling() {
+      pollingEnabled = false;
+      if (pollHandle === null) return;
+      clearTimeout(pollHandle);
+      pollHandle = null;
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    });
+
+    function fillUserFormFromSelection() {
+      const id = userSelectEl.value;
+      const user = cachedUsers.find((u) => u.id === id);
+      userFirstNameEl.value = user?.first_name || "";
+      userLastNameEl.value = user?.last_name || "";
+      userEmailEl.value = user?.email || "";
+      userNotesEl.value = user?.notes || "";
+    }
+
+    async function createUser() {
+      const payload = {
+        first_name: userFirstNameEl.value.trim(),
+        last_name: userLastNameEl.value.trim(),
+        email: userEmailEl.value.trim(),
+        notes: userNotesEl.value.trim(),
+      };
+      if (!payload.first_name) {
+        appendLine("System", "User first name is required", "sys");
+        return;
+      }
+      const r = await fetch("/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not create user", "sys");
+        return;
+      }
+      await loadBootstrap();
+      userSelectEl.value = data.id;
+      fillUserFormFromSelection();
+    }
+
+    async function updateUser() {
+      const id = userSelectEl.value;
+      if (!id) return;
+      const payload = {
+        first_name: userFirstNameEl.value.trim(),
+        last_name: userLastNameEl.value.trim(),
+        email: userEmailEl.value.trim(),
+        notes: userNotesEl.value.trim(),
+      };
+      if (!payload.first_name) {
+        appendLine("System", "User first name is required", "sys");
+        return;
+      }
+      const r = await fetch(`/users/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not update user", "sys");
+        return;
+      }
+      await loadBootstrap();
+      userSelectEl.value = data.id;
+      fillUserFormFromSelection();
+    }
+
+    async function deleteUser() {
+      const id = userSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/users/${id}`, { method: "DELETE" });
+      const data = await r.json();
+      if (!r.ok || !data.deleted) {
+        appendLine("System", "Could not delete user", "sys");
+        return;
+      }
+      await loadBootstrap();
+    }
+
+    userSelectEl.addEventListener("change", fillUserFormFromSelection);
+    document.getElementById("menuUsersBtn").addEventListener("click", () => showMenuPanel("usersPanel"));
+    document.getElementById("menuCampaignsBtn").addEventListener("click", () => showMenuPanel("campaignsPanel"));
+    document.getElementById("menuSessionsBtn").addEventListener("click", () => showMenuPanel("sessionsPanel"));
+    document.getElementById("createCampaignBtn").addEventListener("click", createCampaign);
+    document.getElementById("refreshCampaignsBtn").addEventListener("click", loadBootstrap);
+    document.getElementById("listUsersBtn").addEventListener("click", listUsers);
+    document.getElementById("showUserBtn").addEventListener("click", showUser);
+    document.getElementById("listCampaignsBtn").addEventListener("click", listCampaigns);
+    document.getElementById("showCampaignBtn").addEventListener("click", showCampaign);
+    document.getElementById("listSessionsBtn").addEventListener("click", listSessions);
+    document.getElementById("showSessionBtn").addEventListener("click", showSession);
+    document.getElementById("showSessionLogBtn").addEventListener("click", showSessionLog);
+    document.getElementById("createUserBtn").addEventListener("click", createUser);
+    document.getElementById("updateUserBtn").addEventListener("click", updateUser);
+    document.getElementById("deleteUserBtn").addEventListener("click", deleteUser);
+    document.getElementById("refreshUsersBtn").addEventListener("click", loadBootstrap);
+    document.getElementById("refreshActiveSessionsBtn").addEventListener("click", loadActiveSessions);
+    document.getElementById("endActiveSessionBtn").addEventListener("click", endActiveSession);
+
+    startPolling();
+    loadBootstrap();
+  </script>
+</body>
+</html>

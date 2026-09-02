@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -28,6 +29,7 @@ from mmrpg_nai.models.core import (
     PowerSet,
     Rank,
     Session,
+    User,
 )
 from mmrpg_nai.pdf.ingestion import ingest_pdf
 from mmrpg_nai.storage.store import Store
@@ -57,6 +59,54 @@ def _default_data_dir() -> str:
         except Exception:
             pass
     return "./data"
+
+
+def _mask_token(token: str) -> str:
+    token = token.strip()
+    if not token:
+        return "(empty)"
+    if len(token) <= 8:
+        return "*" * len(token)
+    if len(token) <= 12:
+        return f"{token[:2]}{'*' * (len(token) - 4)}{token[-2:]}"
+    return f"{token[:4]}{'*' * (len(token) - 8)}{token[-4:]}"
+
+
+def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
+    users = store.users.list_all()
+    if not users:
+        return []
+    table = Table("#", "ID", "Name", "Email", "Last Login")
+    for i, user in enumerate(users, 1):
+        last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
+        table.add_row(str(i), user.id[:8], user.display_name, user.email or "—", last_login)
+    console.print("\n[bold]Available players/users:[/bold]")
+    console.print(table)
+    default_ids = campaign.user_ids or [u.id for u in users]
+    console.print("[dim]Enter user numbers/IDs separated by commas, or Enter for defaults.[/dim]")
+    while True:
+        raw = Prompt.ask("Players in this session", default="default")
+        if raw.strip().lower() in {"", "default", "all"}:
+            return [u for uid in default_ids if (u := store.users.load(uid)) is not None] or users
+        selected: list[User] = []
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if token.isdigit():
+                idx = int(token) - 1
+                if 0 <= idx < len(users):
+                    selected.append(users[idx])
+            else:
+                matched = [u for u in users if u.id.startswith(token) or u.display_name.lower() == token.lower()]
+                selected.extend(matched)
+        dedup: dict[str, User] = {}
+        for u in selected:
+            dedup[u.id] = u
+        selected_users = list(dedup.values())
+        if selected_users:
+            return selected_users
+        console.print("[red]No matching users found. Try again.[/red]")
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +348,12 @@ def campaign_show(
         if e:
             enemy_names.append(e.name)
 
+    player_names = []
+    for uid in campaign.user_ids:
+        u = store.users.load(uid)
+        if u:
+            player_names.append(u.display_name)
+
     info = (
         f"[bold]Name:[/bold]        {campaign.name}\n"
         f"[bold]ID:[/bold]          {campaign.id}\n"
@@ -306,6 +362,7 @@ def campaign_show(
         f"[bold]Era:[/bold]         {campaign.settings.era}\n"
         f"[bold]Location:[/bold]    {campaign.settings.location}\n"
         f"[bold]Sessions:[/bold]    {len(campaign.session_ids)}\n"
+        f"[bold]Players:[/bold]     {', '.join(player_names) or '—'}\n"
         f"[bold]Source Materials:[/bold] {', '.join(source_titles) or '—'}\n"
         f"[bold]Enemy Roster:[/bold]    {', '.join(enemy_names) or '—'}\n"
         f"[bold]Created:[/bold]     {campaign.created_at.strftime('%Y-%m-%d')}"
@@ -493,6 +550,64 @@ def campaign_characters(
     console.print(table)
 
 
+@campaign_app.command("add-user")
+def campaign_add_user(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    user_id: str = typer.Argument(..., help="User ID (from 'user list')"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Add a user/player to a campaign."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    user = _load_by_prefix_or_exact(store.users, user_id, "User")
+    if user.id in campaign.user_ids:
+        console.print(f"[yellow]{user.display_name!r} is already in this campaign.[/yellow]")
+        return
+    campaign.user_ids.append(user.id)
+    store.campaigns.save(campaign)
+    console.print(f"[green]Added user {user.display_name!r} to campaign {campaign.name!r}.[/green]")
+
+
+@campaign_app.command("remove-user")
+def campaign_remove_user(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    user_id: str = typer.Argument(..., help="User ID"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Remove a user/player from a campaign."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    user = _load_by_prefix_or_exact(store.users, user_id, "User")
+    if user.id not in campaign.user_ids:
+        console.print(f"[yellow]{user.display_name!r} is not in this campaign.[/yellow]")
+        return
+    campaign.user_ids.remove(user.id)
+    store.campaigns.save(campaign)
+    console.print(f"[green]Removed user {user.display_name!r} from campaign {campaign.name!r}.[/green]")
+
+
+@campaign_app.command("users")
+def campaign_users(
+    campaign_id: str = typer.Argument(..., help="Campaign ID or prefix"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """List users/players tracked in a campaign."""
+    store = _get_store(data_dir)
+    campaign = _load_campaign_or_exit(store, campaign_id)
+    if not campaign.user_ids:
+        console.print("[yellow]No users in this campaign yet. Add one with: campaign add-user[/yellow]")
+        return
+    table = Table("ID", "Name", "Email", "Last Login")
+    for uid in campaign.user_ids:
+        user = store.users.load(uid)
+        if user is None:
+            table.add_row(uid[:8], "[dim]<deleted>[/dim]", "", "")
+            continue
+        last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
+        table.add_row(user.id[:8], user.display_name, user.email or "—", last_login)
+    console.print(table)
+
+
 # ---------------------------------------------------------------------------
 # Session commands
 # ---------------------------------------------------------------------------
@@ -512,9 +627,16 @@ def session_list(
     if not sessions:
         console.print("[yellow]No sessions found.[/yellow]")
         return
-    table = Table("ID", "Campaign", "Title", "#", "Started")
+    table = Table("ID", "Campaign", "Title", "#", "Players", "Started")
     for s in sessions:
-        table.add_row(s.id[:8], s.campaign_id[:8], s.title, str(s.session_number), s.started_at.strftime("%Y-%m-%d"))
+        table.add_row(
+            s.id[:8],
+            s.campaign_id[:8],
+            s.title,
+            str(s.session_number),
+            str(len(s.user_ids)),
+            s.started_at.strftime("%Y-%m-%d"),
+        )
     console.print(table)
 
 
@@ -522,6 +644,7 @@ def session_list(
 def session_create(
     campaign_id: str = typer.Option(..., prompt=True),
     title: str = typer.Option(..., prompt=True),
+    user_ids: str = typer.Option("", help="Comma-separated user IDs/prefixes (optional)"),
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
 ) -> None:
     """Create a new session."""
@@ -529,14 +652,27 @@ def session_create(
     campaign = _load_campaign_or_exit(store, campaign_id)
     campaign_id = campaign.id
     existing = store.sessions.find(campaign_id=campaign_id)
+    chosen_user_ids: list[str] = []
+    raw_ids = [part.strip() for part in user_ids.split(",") if part.strip()]
+    if raw_ids:
+        for uid in raw_ids:
+            user = _load_by_prefix_or_exact(store.users, uid, "User")
+            if user.id not in chosen_user_ids:
+                chosen_user_ids.append(user.id)
+    else:
+        chosen_user_ids = list(campaign.user_ids)
     session = Session(
         campaign_id=campaign_id,
         title=title,
         session_number=len(existing) + 1,
+        user_ids=chosen_user_ids,
     )
     store.sessions.save(session)
     # Link session to campaign
     campaign.session_ids.append(session.id)
+    for uid in chosen_user_ids:
+        if uid not in campaign.user_ids:
+            campaign.user_ids.append(uid)
     store.campaigns.save(campaign)
     console.print(f"[green]Session created: {session.id}[/green]")
 
@@ -577,6 +713,46 @@ def session_remove_character(
     session.participants.remove(character_id)
     store.sessions.save(session)
     console.print(f"[green]Removed {char.name!r} from session '{session.title}'.[/green]")
+
+
+@session_app.command("add-user")
+def session_add_user(
+    session_id: str = typer.Argument(..., help="Session ID or prefix"),
+    user_id: str = typer.Argument(..., help="User ID (from 'user list')"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Add a user/player participant to a session."""
+    store = _get_store(data_dir)
+    session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
+    user = _load_by_prefix_or_exact(store.users, user_id, "User")
+    if user.id in session.user_ids:
+        console.print(f"[yellow]{user.display_name!r} is already a participant in this session.[/yellow]")
+        return
+    session.user_ids.append(user.id)
+    store.sessions.save(session)
+    campaign = store.campaigns.load(session.campaign_id)
+    if campaign and user.id not in campaign.user_ids:
+        campaign.user_ids.append(user.id)
+        store.campaigns.save(campaign)
+    console.print(f"[green]Added user {user.display_name!r} to session '{session.title}'.[/green]")
+
+
+@session_app.command("remove-user")
+def session_remove_user(
+    session_id: str = typer.Argument(..., help="Session ID or prefix"),
+    user_id: str = typer.Argument(..., help="User ID"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Remove a user/player participant from a session."""
+    store = _get_store(data_dir)
+    session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
+    user = _load_by_prefix_or_exact(store.users, user_id, "User")
+    if user.id not in session.user_ids:
+        console.print(f"[yellow]{user.display_name!r} is not a participant in this session.[/yellow]")
+        return
+    session.user_ids.remove(user.id)
+    store.sessions.save(session)
+    console.print(f"[green]Removed user {user.display_name!r} from session '{session.title}'.[/green]")
 
 
 @session_app.command("run")
@@ -662,6 +838,8 @@ def session_run(
                         selected.extend(matched)
                 party = selected or pc_pool
 
+        session_users = _select_users_for_session(store, campaign)
+
         # ------------------------------------------------------------------
         # 3. Create a new session for this run
         # ------------------------------------------------------------------
@@ -672,10 +850,14 @@ def session_run(
             title=session_title,
             session_number=len(existing) + 1,
             participants=[c.id for c in party],
+            user_ids=[u.id for u in session_users],
         )
         store.sessions.save(session)
         # Link session to campaign
         campaign.session_ids.append(session.id)
+        for user in session_users:
+            if user.id not in campaign.user_ids:
+                campaign.user_ids.append(user.id)
         store.campaigns.save(campaign)
         console.print(f"[green]Created session #{session.session_number}: {session.id}[/green]")
 
@@ -693,6 +875,9 @@ def session_run(
         party = [c for cid in session.participants if (c := store.characters.load(cid)) is not None]
         if not party:
             party = [c for cid in campaign.character_ids if (c := store.characters.load(cid)) is not None]
+        if not session.user_ids:
+            session.user_ids = list(campaign.user_ids)
+            store.sessions.save(session)
         prev_sessions = store.sessions.find(campaign_id=campaign.id)
         prev_session = next(
             (s for s in reversed(prev_sessions) if s.id != session.id),
@@ -711,8 +896,12 @@ def session_run(
 
     narrator = Narrator(cfg, store)
     narrator.start_session(session, campaign, party, source_materials=source_materials)
+    store.touch_users_for_session(session.user_ids)
 
     party_names = ", ".join(c.name for c in party) if party else "Unknown party"
+    session_user_names = ", ".join(
+        user.display_name for uid in session.user_ids if (user := store.users.load(uid)) is not None
+    ) or "—"
     sources_line = (
         f"\n[bold]Source Materials:[/bold] {', '.join(m.title for m in source_materials)}"
         if source_materials
@@ -722,7 +911,8 @@ def session_run(
         Panel(
             f"[bold]Session:[/bold] {session.title}  (#{session.session_number})\n"
             f"[bold]Campaign:[/bold] {campaign.name}\n"
-            f"[bold]Party:[/bold] {party_names}"
+            f"[bold]Party:[/bold] {party_names}\n"
+            f"[bold]Players:[/bold] {session_user_names}"
             f"{sources_line}",
             title="🦸 MMRPG Narrator AI",
         )
@@ -831,6 +1021,114 @@ def session_log(
         prefix = "(meta) " if entry.role == "meta" else ""
         ts = entry.timestamp.strftime("%H:%M:%S")
         console.print(f"[dim]{ts}[/dim] [bold {color}]{prefix}{entry.role.capitalize()}[/bold {color}]: {entry.content}\n")
+
+
+# ---------------------------------------------------------------------------
+# User commands
+# ---------------------------------------------------------------------------
+
+user_app = typer.Typer(help="Manage users/players.")
+app.add_typer(user_app, name="user")
+app.add_typer(user_app, name="users")
+
+
+@user_app.command("list")
+def user_list(data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR")) -> None:
+    """List users/players and last login."""
+    store = _get_store(data_dir)
+    users = store.users.list_all()
+    if not users:
+        console.print("[yellow]No users found.[/yellow]")
+        return
+    table = Table("ID", "Name", "Email", "Last Login", "Sessions")
+    for user in users:
+        last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
+        table.add_row(user.id[:8], user.display_name, user.email or "—", last_login, str(len(user.session_timestamps)))
+    console.print(table)
+
+
+@user_app.command("create")
+def user_create(
+    first_name: str = typer.Option(..., prompt=True),
+    last_name: str = typer.Option("", prompt=True),
+    email: str = typer.Option("", prompt=True),
+    notes: str = typer.Option("", prompt=True),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Create a user/player."""
+    store = _get_store(data_dir)
+    clean_first = first_name.strip()
+    if not clean_first:
+        console.print("[red]first_name is required.[/red]")
+        raise typer.Exit(1)
+    user = User(first_name=clean_first, last_name=last_name.strip(), email=email.strip(), notes=notes)
+    store.users.save(user)
+    console.print(f"[green]User created: {user.id}[/green]")
+
+
+@user_app.command("show")
+def user_show(
+    user_id: str = typer.Argument(..., help="User ID or prefix"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Show full details for a user."""
+    store = _get_store(data_dir)
+    user = _load_by_prefix_or_exact(store.users, user_id, "User")
+    last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
+    info = (
+        f"[bold]Name:[/bold]       {user.display_name}\n"
+        f"[bold]ID:[/bold]         {user.id}\n"
+        f"[bold]First Name:[/bold] {user.first_name}\n"
+        f"[bold]Last Name:[/bold]  {user.last_name or '—'}\n"
+        f"[bold]Email:[/bold]      {user.email or '—'}\n"
+        f"[bold]Last Login:[/bold] {last_login}\n"
+        f"[bold]Sessions:[/bold]   {len(user.session_timestamps)}\n"
+        f"[bold]Notes:[/bold]      {user.notes or '—'}"
+    )
+    console.print(Panel(info, title=f"👤 {user.display_name}", expand=False))
+
+
+@user_app.command("update")
+def user_update(
+    user_id: str = typer.Argument(..., help="User ID or prefix"),
+    first_name: Optional[str] = typer.Option(None),
+    last_name: Optional[str] = typer.Option(None),
+    email: Optional[str] = typer.Option(None),
+    notes: Optional[str] = typer.Option(None),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Update a user/player."""
+    store = _get_store(data_dir)
+    user = _load_by_prefix_or_exact(store.users, user_id, "User")
+    if first_name is not None:
+        clean_first = first_name.strip()
+        if not clean_first:
+            console.print("[red]first_name cannot be empty.[/red]")
+            raise typer.Exit(1)
+        user.first_name = clean_first
+    if last_name is not None:
+        user.last_name = last_name.strip()
+    if email is not None:
+        user.email = email.strip()
+    if notes is not None:
+        user.notes = notes
+    user.updated_at = datetime.now(timezone.utc)
+    store.users.save(user)
+    console.print(f"[green]Updated user: {user.display_name} ({user.id[:8]})[/green]")
+
+
+@user_app.command("delete")
+def user_delete(
+    user_id: str = typer.Argument(..., help="User ID or prefix"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Delete a user/player."""
+    store = _get_store(data_dir)
+    user = _load_by_prefix_or_exact(store.users, user_id, "User")
+    if not store.users.delete(user.id):
+        console.print(f"[red]Could not delete user: {user.id}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Deleted user: {user.display_name} ({user.id[:8]})[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -1059,6 +1357,14 @@ def serve(
         raise typer.Exit(1)
 
     from mmrpg_nai.mcp.service import app as fastapi_app, init_app
+
+    cfg = _get_store(data_dir).load_config()
+    token_env = cfg.llm.api_key_env
+    token_value = os.environ.get(token_env, "")
+    if token_value.strip():
+        console.print(f"[dim]{token_env} detected: {_mask_token(token_value)}[/dim]")
+    else:
+        console.print(f"[yellow]{token_env} is not set; web chat requests will fail until it is configured.[/yellow]")
 
     init_app(data_dir)
     console.print(f"[bold]MCP Service running at http://{host}:{port}[/bold]")

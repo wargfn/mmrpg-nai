@@ -22,6 +22,7 @@ It uses the **GitHub Copilot GPT-5.4** language model (configurable) to help you
 | **Adventure Templates** | Import/export adventures from a standard JSON template |
 | **PDF Source Materials** | Ingest rulebooks, bestiaries, and supplements as AI context — injected automatically each session |
 | **MCP REST Service** | FastAPI service exposing all data to other tools |
+| **Web Front End** | Browser UI for browsing campaigns/sessions and running chat sessions |
 | **Settings & Prompts** | Configure LLM settings, system prompts, and extra named prompts |
 
 ## Requirements
@@ -225,6 +226,24 @@ List all player characters in a campaign's default character list.
 mmrpg-nai campaign characters <campaign-id>
 ```
 
+#### `campaign add-user <campaign-id> <user-id>`
+Add a user/player to a campaign.
+```bash
+mmrpg-nai campaign add-user <campaign-id> <user-id>
+```
+
+#### `campaign remove-user <campaign-id> <user-id>`
+Remove a user/player from a campaign.
+```bash
+mmrpg-nai campaign remove-user <campaign-id> <user-id>
+```
+
+#### `campaign users <campaign-id>`
+List users/players tracked in a campaign.
+```bash
+mmrpg-nai campaign users <campaign-id>
+```
+
 ---
 
 ### `mmrpg-nai session` — Sessions
@@ -253,6 +272,18 @@ mmrpg-nai session add-character <session-id> <character-id>
 Remove a character participant from a session.
 ```bash
 mmrpg-nai session remove-character <session-id> <character-id>
+```
+
+#### `session add-user <session-id> <user-id>`
+Add a user/player participant to a session.
+```bash
+mmrpg-nai session add-user <session-id> <user-id>
+```
+
+#### `session remove-user <session-id> <user-id>`
+Remove a user/player participant from a session.
+```bash
+mmrpg-nai session remove-user <session-id> <user-id>
 ```
 
 #### `session run`
@@ -300,6 +331,40 @@ Print the full conversation log for a session.
 mmrpg-nai session log <session-id>
 ```
 Meta entries are shown in yellow, narrator in blue, player in green.
+
+---
+
+### `mmrpg-nai user` — Users / Players
+
+#### `user list`
+List users and show their last login timestamp (updated when they join a session).
+```bash
+mmrpg-nai user list
+```
+
+#### `user create`
+Create a user/player record (`first_name` required; `last_name` and `email` optional).
+```bash
+mmrpg-nai user create
+```
+
+#### `user show <user-id>`
+Show details for a user/player.
+```bash
+mmrpg-nai user show <user-id>
+```
+
+#### `user update <user-id>`
+Update first/last name, email, or notes for a user/player.
+```bash
+mmrpg-nai user update <user-id> --first-name "New First Name"
+```
+
+#### `user delete <user-id>`
+Delete a user/player.
+```bash
+mmrpg-nai user delete <user-id>
+```
 
 ---
 
@@ -543,11 +608,22 @@ mmrpg-nai serve --host 0.0.0.0 --port 9000
 
 **API docs:** `http://127.0.0.1:8000/docs` (Swagger UI)
 
+**Web front end:** `http://127.0.0.1:8000/`
+
 **Available endpoints:**
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/health` | Health check |
+| GET | `/` | Web front end |
+| GET | `/web/bootstrap` | Campaign/session/character data for web UI |
+| GET | `/web/active-sessions` | List currently active web chat sessions for attach workflows |
+| POST | `/web/session/start` | Start a new chat session or create a resumed follow-up session from an existing one |
+| GET | `/web/session/{id}` | Fetch current session state/log for multi-client sync |
+| POST | `/web/session/{id}/chat` | Send chat or meta-direction message |
+| POST | `/web/session/{id}/end` | Mark in-memory web chat session ended |
+| GET/POST | `/users` | List / create users |
+| GET/PUT/DELETE | `/users/{user_id}` | Get / update / delete a user |
 | GET/POST | `/campaigns` | List / create campaigns |
 | GET/PUT/DELETE | `/campaigns/{id}` | Get / update / delete a campaign |
 | GET/POST | `/sessions` | List / create sessions |
