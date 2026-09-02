@@ -617,6 +617,7 @@ mmrpg-nai serve --host 0.0.0.0 --port 9000
 | GET | `/health` | Health check |
 | GET | `/` | Web front end |
 | GET | `/web/bootstrap` | Campaign/session/character data for web UI |
+| GET | `/web/active-sessions` | List currently active web chat sessions for attach workflows |
 | POST | `/web/session/start` | Start a new chat session or create a resumed follow-up session from an existing one |
 | GET | `/web/session/{id}` | Fetch current session state/log for multi-client sync |
 | POST | `/web/session/{id}/chat` | Send chat or meta-direction message |

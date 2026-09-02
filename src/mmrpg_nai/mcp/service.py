@@ -90,6 +90,10 @@ class WebBootstrapResponse(BaseModel):
     users: list[User]
 
 
+class WebActiveSessionsResponse(BaseModel):
+    sessions: list[Session]
+
+
 class WebSessionStateResponse(BaseModel):
     session: Session
     campaign: Campaign
@@ -186,6 +190,13 @@ def _as_web_participants(participants: list[Character]) -> list[WebParticipant]:
     return [WebParticipant(id=p.id, name=p.name, alias=p.alias) for p in participants]
 
 
+def _list_active_sessions(store: Store) -> list[Session]:
+    with _active_narrators_lock:
+        active_ids = list(_active_narrators.keys())
+    active_sessions = [s for sid in active_ids if (s := store.sessions.load(sid)) is not None]
+    return sorted(active_sessions, key=lambda s: (s.session_number, s.started_at))
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -212,6 +223,12 @@ def web_bootstrap() -> WebBootstrapResponse:
         characters=[c for c in store.characters.list_all() if not c.is_npc],
         users=store.users.list_all(),
     )
+
+
+@app.get("/web/active-sessions", response_model=WebActiveSessionsResponse, tags=["web"])
+def web_active_sessions() -> WebActiveSessionsResponse:
+    store = get_store()
+    return WebActiveSessionsResponse(sessions=_list_active_sessions(store))
 
 
 @app.post("/web/session/start", response_model=WebSessionStartResponse, tags=["web"])

@@ -102,6 +102,48 @@ def test_web_bootstrap(client: TestClient):
     assert len(data["users"]) == 1
 
 
+def test_web_active_sessions(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    class DummyNarrator:
+        def __init__(self, cfg, store):
+            self.store = store
+            self.session = None
+
+        def start_session(self, session, campaign, party, source_materials=None):
+            self.session = session
+
+        def recap_last_session(self, last_session):
+            return ""
+
+        def narrate(self, player_input: str, stream: bool = False):
+            return "ok"
+
+        def meta_direction(self, direction: str, stream: bool = False):
+            return "ok"
+
+    monkeypatch.setattr(service, "Narrator", DummyNarrator)
+    campaign = client.post("/campaigns", json={"name": "Active C", "description": "D"}).json()
+    character = client.post("/characters", json={"name": "Hero", "alias": "H"}).json()
+
+    started = client.post(
+        "/web/session/start",
+        json={"campaign_id": campaign["id"], "participant_ids": [character["id"]]},
+    ).json()
+    session_id = started["session"]["id"]
+
+    active = client.get("/web/active-sessions")
+    assert active.status_code == 200
+    active_ids = [s["id"] for s in active.json()["sessions"]]
+    assert session_id in active_ids
+
+    ended = client.post(f"/web/session/{session_id}/end")
+    assert ended.status_code == 200
+
+    active_after_end = client.get("/web/active-sessions")
+    assert active_after_end.status_code == 200
+    active_ids_after_end = [s["id"] for s in active_after_end.json()["sessions"]]
+    assert session_id not in active_ids_after_end
+
+
 def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     starts: list[str] = []
 
