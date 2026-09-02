@@ -4,7 +4,7 @@ Marvel Multiverse Role-Playing Game Narrator AI Tools
 ## Overview
 
 `mmrpg-nai` is an AI-powered Narrator assistant for the **Marvel Multiverse Role-Playing Game (MMRPG)**.  
-It uses the **GitHub Copilot GPT-5.4** language model (configurable) to help you plan campaigns, run interactive sessions, manage characters and equipment, import adventures, and more — all from your terminal.
+It supports **OpenAI**, **GitHub Copilot**, and **OpenWebUI/Ollama** (OpenAI-compatible endpoints) to help you plan campaigns, run interactive sessions, manage characters and equipment, import adventures, and more — all from your terminal.
 
 ## Features
 
@@ -28,7 +28,10 @@ It uses the **GitHub Copilot GPT-5.4** language model (configurable) to help you
 ## Requirements
 
 - Python 3.11+
-- A **GitHub personal access token** with the `models` permission
+- One of:
+  - `OPENAI_API_KEY` (OpenAI)
+  - `GITHUB_TOKEN` with `models` permission (GitHub Copilot)
+  - `OLLAMA_API_KEY` (OpenWebUI/Ollama)
 - Optional: `pymupdf` for PDF ingestion (included in requirements)
 
 ## Installation
@@ -45,9 +48,16 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
-# Edit .env and set GITHUB_TOKEN
+# Edit .env and set one of: OPENAI_API_KEY, GITHUB_TOKEN, or OLLAMA_API_KEY
 export $(grep -v '^#' .env | xargs)
 ```
+
+Provider detection order is:
+1. `OPENAI_API_KEY`
+2. `GITHUB_TOKEN`
+3. `OLLAMA_API_KEY`
+
+The detected provider automatically uses its own model/base URL/token-env settings from `llm.provider_settings`.
 
 ## Quick Start
 
@@ -106,11 +116,10 @@ mmrpg-nai config show
 #### `config set <key> <value>`
 Set any configuration value using dot-notation.
 ```bash
-# LLM settings
-mmrpg-nai config set llm.model gpt-4o
-mmrpg-nai config set llm.temperature 0.9
-mmrpg-nai config set llm.max_tokens 8192
-mmrpg-nai config set llm.api_base https://api.githubcopilot.com
+# LLM settings for a specific provider profile
+mmrpg-nai config set llm.provider_settings.openai.model gpt-4o
+mmrpg-nai config set llm.provider_settings.github_copilot.model gpt-5.4
+mmrpg-nai config set llm.provider_settings.ollama.api_base http://localhost:11434/v1
 
 # Narrator settings
 mmrpg-nai config set max_source_chars 40000   # max PDF text injected per session (0 = disabled)
@@ -127,7 +136,7 @@ mmrpg-nai config system-prompt --prompt-file my_prompt.txt
 ```
 
 #### `config models`
-Query the GitHub Copilot API endpoint and print a table of all available model IDs.
+Query the detected provider endpoint and print a table of available model IDs.
 The currently active model is highlighted with ✓.
 ```bash
 # List all models

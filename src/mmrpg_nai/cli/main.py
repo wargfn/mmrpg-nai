@@ -169,11 +169,10 @@ def config_models(
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
     filter_text: Optional[str] = typer.Option(None, "--filter", "-f", help="Case-insensitive substring to filter model IDs"),
 ) -> None:
-    """List models available on the GitHub Copilot API endpoint.
+    """List models available on the currently detected AI provider endpoint.
 
     Reads your token from the environment variable configured in llm.api_key_env
-    (default: GITHUB_TOKEN) and queries the /models endpoint.  The current model
-    in use is highlighted.
+    and queries the /models endpoint. The current model in use is highlighted.
 
     After choosing a model, apply it with:
 
@@ -183,15 +182,16 @@ def config_models(
 
     store = _get_store(data_dir)
     cfg = store.load_config()
+    llm_cfg = cfg.llm.resolved(_os.environ)
 
-    api_key = _os.environ.get(cfg.llm.api_key_env, "").strip()
+    api_key = _os.environ.get(llm_cfg.api_key_env, "").strip()
     if not api_key:
         console.print(
             Panel(
-                f"Environment variable [bold]{cfg.llm.api_key_env!r}[/bold] is not set.\n"
-                "  1. Create a GitHub token at https://github.com/settings/tokens\n"
-                "  2. Enable GitHub Copilot on your account (https://github.com/features/copilot)\n"
-                f"  3. Export it:  export {cfg.llm.api_key_env}=ghp_...",
+                f"Environment variable [bold]{llm_cfg.api_key_env!r}[/bold] is not set.\n"
+                f"  1. Detected provider: [bold]{llm_cfg.provider}[/bold]\n"
+                f"  2. Export a key/token: [bold]export {llm_cfg.api_key_env}=...[/bold]\n"
+                "  3. Or update llm.provider_settings in config.json",
                 title="[bold red]⚠ Token not set[/bold red]",
                 border_style="red",
             )
@@ -208,10 +208,10 @@ def config_models(
         )
         from mmrpg_nai.llm.client import _wrap_api_error
 
-        client = _OpenAI(base_url=cfg.llm.api_base, api_key=api_key)
+        client = _OpenAI(base_url=llm_cfg.api_base, api_key=api_key)
         models_response = client.models.list()
     except (_APIConnectionError, _APIStatusError, _AuthenticationError, _RateLimitError) as exc:
-        wrapped = _wrap_api_error(exc, cfg.llm)
+        wrapped = _wrap_api_error(exc, llm_cfg)
         if isinstance(wrapped, PermissionError):
             console.print(Panel(str(wrapped), title="[bold red]⚠ Authentication error[/bold red]", border_style="red"))
         elif isinstance(wrapped, ConnectionError):
@@ -222,7 +222,7 @@ def config_models(
     except Exception as exc:
         console.print(
             Panel(
-                f"{exc}\n\nEndpoint: {cfg.llm.api_base}",
+                f"{exc}\n\nEndpoint: {llm_cfg.api_base}",
                 title="[bold red]⚠ Failed to fetch models[/bold red]",
                 border_style="red",
             )
@@ -242,11 +242,11 @@ def config_models(
         "Model ID",
         "Owner / Provider",
         "Active",
-        title=f"Models at {cfg.llm.api_base}",
+        title=f"Models at {llm_cfg.api_base} ({llm_cfg.provider})",
         show_lines=False,
     )
     for m in model_data:
-        is_active = m.id == cfg.llm.model
+        is_active = m.id == llm_cfg.model
         owner = getattr(m, "owned_by", "") or ""
         table.add_row(
             f"[bold green]{m.id}[/bold green]" if is_active else m.id,
@@ -256,8 +256,8 @@ def config_models(
 
     console.print(table)
     console.print(
-        f"\n[dim]Currently active model: [bold]{cfg.llm.model}[/bold]  "
-        f"(change with: mmrpg-nai config set llm.model <id>)[/dim]"
+        f"\n[dim]Detected provider: [bold]{llm_cfg.provider}[/bold] • Active model: [bold]{llm_cfg.model}[/bold]\n"
+        f"Change with: mmrpg-nai config set llm.provider_settings.{llm_cfg.provider}.model <id>[/dim]"
     )
 
 
@@ -1359,12 +1359,16 @@ def serve(
     from mmrpg_nai.mcp.service import app as fastapi_app, init_app
 
     cfg = _get_store(data_dir).load_config()
-    token_env = cfg.llm.api_key_env
+    llm_cfg = cfg.llm.resolved(os.environ)
+    token_env = llm_cfg.api_key_env
     token_value = os.environ.get(token_env, "")
     if token_value.strip():
-        console.print(f"[dim]{token_env} detected: {_mask_token(token_value)}[/dim]")
+        console.print(f"[dim]{llm_cfg.provider} detected via {token_env}: {_mask_token(token_value)}[/dim]")
     else:
-        console.print(f"[yellow]{token_env} is not set; web chat requests will fail until it is configured.[/yellow]")
+        console.print(
+            f"[yellow]{token_env} is not set for provider '{llm_cfg.provider}'; "
+            "web chat requests will fail until it is configured.[/yellow]"
+        )
 
     init_app(data_dir)
     console.print(f"[bold]MCP Service running at http://{host}:{port}[/bold]")

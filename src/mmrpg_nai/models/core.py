@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
 from pydantic import BaseModel, Field
 
@@ -264,6 +265,65 @@ class LLMConfig(BaseModel):
     model: str = "gpt-5.4"
     api_base: str = "https://api.githubcopilot.com"
     api_key_env: str = "GITHUB_TOKEN"
+    max_tokens: int = 4096
+    temperature: float = 0.8
+    provider_settings: dict[str, "LLMProviderSettings"] = Field(default_factory=lambda: {
+        "openai": LLMProviderSettings(
+            model="gpt-4o",
+            api_base="https://api.openai.com/v1",
+            api_key_env="OPENAI_API_KEY",
+            max_tokens=4096,
+            temperature=0.8,
+        ),
+        "github_copilot": LLMProviderSettings(
+            model="gpt-5.4",
+            api_base="https://api.githubcopilot.com",
+            api_key_env="GITHUB_TOKEN",
+            max_tokens=4096,
+            temperature=0.8,
+        ),
+        "ollama": LLMProviderSettings(
+            model="llama3.1",
+            api_base="http://localhost:11434/v1",
+            api_key_env="OLLAMA_API_KEY",
+            max_tokens=4096,
+            temperature=0.8,
+        ),
+    })
+
+    def detect_provider(self, env: Mapping[str, str] | None = None) -> str | None:
+        env_map = env or os.environ
+        if (env_map.get("OPENAI_API_KEY") or "").strip():
+            return "openai"
+        if (env_map.get("GITHUB_TOKEN") or "").strip():
+            return "github_copilot"
+        if (env_map.get("OLLAMA_API_KEY") or "").strip():
+            return "ollama"
+        return None
+
+    def resolved(self, env: Mapping[str, str] | None = None) -> "LLMConfig":
+        if self.api_key_env not in {"OPENAI_API_KEY", "GITHUB_TOKEN", "OLLAMA_API_KEY"}:
+            return self
+        detected = self.detect_provider(env)
+        if not detected:
+            return self
+        selected = self.provider_settings.get(detected)
+        if not selected:
+            return self.model_copy(update={"provider": detected})
+        return self.model_copy(update={
+            "provider": detected,
+            "model": selected.model,
+            "api_base": selected.api_base,
+            "api_key_env": selected.api_key_env,
+            "max_tokens": selected.max_tokens,
+            "temperature": selected.temperature,
+        })
+
+
+class LLMProviderSettings(BaseModel):
+    model: str
+    api_base: str
+    api_key_env: str
     max_tokens: int = 4096
     temperature: float = 0.8
 

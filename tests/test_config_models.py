@@ -146,3 +146,16 @@ def test_config_models_auth_error_panel(data_dir):
 
     assert result.exit_code != 0
     assert "Authentication" in result.output
+
+
+def test_config_models_uses_detected_openai_provider(data_dir):
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=True):
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.models.list.return_value = _make_models_response("gpt-4o", "gpt-4o-mini")
+            result = runner.invoke(app, ["config", "models", "--data-dir", data_dir])
+
+    assert result.exit_code == 0
+    assert "openai" in result.output.lower()
+    assert "gpt-4o" in result.output

@@ -10,6 +10,7 @@ from mmrpg_nai.models.core import (
     Equipment,
     EquipmentType,
     LogEntry,
+    LLMConfig,
     NarratorConfig,
     Power,
     PowerSet,
@@ -72,6 +73,27 @@ def test_narrator_config_defaults():
     cfg = NarratorConfig()
     assert cfg.llm.model == "gpt-5.4"
     assert "Narrator" in cfg.system_prompt
+
+
+def test_llm_config_detects_openai_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"OPENAI_API_KEY": "sk-test"})
+    assert resolved.provider == "openai"
+    assert resolved.api_key_env == "OPENAI_API_KEY"
+
+
+def test_llm_config_detects_github_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"GITHUB_TOKEN": "ghp_test"})
+    assert resolved.provider == "github_copilot"
+    assert resolved.api_key_env == "GITHUB_TOKEN"
+
+
+def test_llm_config_detects_ollama_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"OLLAMA_API_KEY": "ollama_test"})
+    assert resolved.provider == "ollama"
+    assert resolved.api_key_env == "OLLAMA_API_KEY"
 
 
 def test_source_material():
