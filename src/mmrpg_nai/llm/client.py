@@ -23,6 +23,7 @@ _RETRY_DELAY = 2.0  # seconds between retries
 
 def _provider_label(provider: str) -> str:
     labels = {
+        "google_ai_studio": "Google AI Studio",
         "openai": "OpenAI",
         "github_copilot": "GitHub Copilot",
         "ollama": "OpenWebUI/Ollama",

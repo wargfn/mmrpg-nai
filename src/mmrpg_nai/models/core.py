@@ -268,6 +268,13 @@ class LLMConfig(BaseModel):
     max_tokens: int = 4096
     temperature: float = 0.8
     provider_settings: dict[str, "LLMProviderSettings"] = Field(default_factory=lambda: {
+        "google_ai_studio": LLMProviderSettings(
+            model="gemini-2.5-flash",
+            api_base="https://generativelanguage.googleapis.com/v1beta/openai",
+            api_key_env="GOOGLE_API_KEY",
+            max_tokens=4096,
+            temperature=0.8,
+        ),
         "openai": LLMProviderSettings(
             model="gpt-4o",
             api_base="https://api.openai.com/v1",
@@ -293,6 +300,8 @@ class LLMConfig(BaseModel):
 
     def detect_provider(self, env: Mapping[str, str] | None = None) -> str | None:
         env_map = env or os.environ
+        if (env_map.get("GOOGLE_API_KEY") or "").strip():
+            return "google_ai_studio"
         if (env_map.get("OPENAI_API_KEY") or "").strip():
             return "openai"
         if (env_map.get("GITHUB_TOKEN") or "").strip():
@@ -302,16 +311,13 @@ class LLMConfig(BaseModel):
         return None
 
     def resolved(self, env: Mapping[str, str] | None = None) -> "LLMConfig":
-        if self.api_key_env not in {"OPENAI_API_KEY", "GITHUB_TOKEN", "OLLAMA_API_KEY"}:
-            return self
         detected = self.detect_provider(env)
-        if not detected:
-            return self
-        selected = self.provider_settings.get(detected)
+        target_provider = detected or self.provider
+        selected = self.provider_settings.get(target_provider)
         if not selected:
-            return self.model_copy(update={"provider": detected})
+            return self
         return self.model_copy(update={
-            "provider": detected,
+            "provider": target_provider,
             "model": selected.model,
             "api_base": selected.api_base,
             "api_key_env": selected.api_key_env,

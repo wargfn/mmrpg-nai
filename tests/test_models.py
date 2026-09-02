@@ -82,6 +82,13 @@ def test_llm_config_detects_openai_provider():
     assert resolved.api_key_env == "OPENAI_API_KEY"
 
 
+def test_llm_config_detects_google_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"GOOGLE_API_KEY": "AIza-test"})
+    assert resolved.provider == "google_ai_studio"
+    assert resolved.api_key_env == "GOOGLE_API_KEY"
+
+
 def test_llm_config_detects_github_provider():
     cfg = LLMConfig()
     resolved = cfg.resolved({"GITHUB_TOKEN": "ghp_test"})
@@ -94,6 +101,13 @@ def test_llm_config_detects_ollama_provider():
     resolved = cfg.resolved({"OLLAMA_API_KEY": "ollama_test"})
     assert resolved.provider == "ollama"
     assert resolved.api_key_env == "OLLAMA_API_KEY"
+
+
+def test_llm_config_uses_selected_provider_without_detected_env():
+    cfg = LLMConfig(provider="openai")
+    resolved = cfg.resolved({})
+    assert resolved.provider == "openai"
+    assert resolved.api_key_env == "OPENAI_API_KEY"
 
 
 def test_source_material():

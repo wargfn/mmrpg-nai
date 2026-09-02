@@ -115,6 +115,8 @@ def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
 
 config_app = typer.Typer(help="Manage narrator configuration.")
 app.add_typer(config_app, name="config")
+provider_app = typer.Typer(help="Manage AI providers.")
+config_app.add_typer(provider_app, name="provider")
 
 
 @config_app.command("show")
@@ -148,6 +150,87 @@ def config_set(
     console.print(f"[green]Set {key} = {value}[/green]")
 
 
+@provider_app.command("list")
+def config_provider_list(
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """List all available AI provider profiles."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    llm_cfg = cfg.llm
+    resolved = llm_cfg.resolved(os.environ)
+    table = Table("Provider", "Model", "API Base", "API Key Env", "Selected", "Detected")
+    detected_provider = llm_cfg.detect_provider(os.environ)
+    for name in sorted(llm_cfg.provider_settings):
+        ps = llm_cfg.provider_settings[name]
+        table.add_row(
+            name,
+            ps.model,
+            ps.api_base,
+            ps.api_key_env,
+            "✓" if llm_cfg.provider == name else "",
+            "✓" if detected_provider == name else "",
+        )
+    console.print(table)
+    console.print(f"[dim]Runtime active provider: {resolved.provider}[/dim]")
+
+
+@provider_app.command("show")
+def config_provider_show(
+    provider: Optional[str] = typer.Argument(None, help="Provider name (default: currently selected provider)"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Show provider configuration."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    llm_cfg = cfg.llm
+    selected_provider = provider or llm_cfg.provider
+    ps = llm_cfg.provider_settings.get(selected_provider)
+    if ps is None:
+        console.print(f"[red]Unknown provider: {selected_provider}[/red]")
+        console.print(f"[yellow]Available: {', '.join(sorted(llm_cfg.provider_settings.keys()))}[/yellow]")
+        raise typer.Exit(1)
+    data = {
+        "provider": selected_provider,
+        "model": ps.model,
+        "api_base": ps.api_base,
+        "api_key_env": ps.api_key_env,
+        "max_tokens": ps.max_tokens,
+        "temperature": ps.temperature,
+        "selected": llm_cfg.provider == selected_provider,
+        "detected": llm_cfg.detect_provider(os.environ) == selected_provider,
+    }
+    console.print_json(json.dumps(data, indent=2))
+
+
+@provider_app.command("select")
+def config_provider_select(
+    provider: str = typer.Argument(..., help="Provider name to select"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Select default provider profile."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    llm_cfg = cfg.llm
+    ps = llm_cfg.provider_settings.get(provider)
+    if ps is None:
+        console.print(f"[red]Unknown provider: {provider}[/red]")
+        console.print(f"[yellow]Available: {', '.join(sorted(llm_cfg.provider_settings.keys()))}[/yellow]")
+        raise typer.Exit(1)
+
+    cfg.llm.provider = provider
+    cfg.llm.model = ps.model
+    cfg.llm.api_base = ps.api_base
+    cfg.llm.api_key_env = ps.api_key_env
+    cfg.llm.max_tokens = ps.max_tokens
+    cfg.llm.temperature = ps.temperature
+    store.save_config(cfg)
+    console.print(
+        f"[green]Selected provider: {provider}[/green]\n"
+        f"[dim]Model: {ps.model} • API base: {ps.api_base} • API key env: {ps.api_key_env}[/dim]"
+    )
+
+
 @config_app.command("system-prompt")
 def config_system_prompt(
     prompt_file: Optional[Path] = typer.Option(None, help="Path to a .txt file with the system prompt"),
@@ -176,7 +259,7 @@ def config_models(
 
     After choosing a model, apply it with:
 
-        mmrpg-nai config set llm.model <model-id>
+        mmrpg-nai config set llm.provider_settings.<provider>.model <model-id>
     """
     import os as _os
 

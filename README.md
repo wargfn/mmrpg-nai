@@ -4,7 +4,7 @@ Marvel Multiverse Role-Playing Game Narrator AI Tools
 ## Overview
 
 `mmrpg-nai` is an AI-powered Narrator assistant for the **Marvel Multiverse Role-Playing Game (MMRPG)**.  
-It supports **OpenAI**, **GitHub Copilot**, and **OpenWebUI/Ollama** (OpenAI-compatible endpoints) to help you plan campaigns, run interactive sessions, manage characters and equipment, import adventures, and more — all from your terminal.
+It supports **Google AI Studio**, **OpenAI**, **GitHub Copilot**, and **OpenWebUI/Ollama** (OpenAI-compatible endpoints) to help you plan campaigns, run interactive sessions, manage characters and equipment, import adventures, and more — all from your terminal.
 
 ## Features
 
@@ -29,6 +29,7 @@ It supports **OpenAI**, **GitHub Copilot**, and **OpenWebUI/Ollama** (OpenAI-com
 
 - Python 3.11+
 - One of:
+  - `GOOGLE_API_KEY` (Google AI Studio)
   - `OPENAI_API_KEY` (OpenAI)
   - `GITHUB_TOKEN` with `models` permission (GitHub Copilot)
   - `OLLAMA_API_KEY` (OpenWebUI/Ollama)
@@ -48,14 +49,15 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
-# Edit .env and set one of: OPENAI_API_KEY, GITHUB_TOKEN, or OLLAMA_API_KEY
+# Edit .env and set one of: GOOGLE_API_KEY, OPENAI_API_KEY, GITHUB_TOKEN, or OLLAMA_API_KEY
 export $(grep -v '^#' .env | xargs)
 ```
 
 Provider detection order is:
-1. `OPENAI_API_KEY`
-2. `GITHUB_TOKEN`
-3. `OLLAMA_API_KEY`
+1. `GOOGLE_API_KEY`
+2. `OPENAI_API_KEY`
+3. `GITHUB_TOKEN`
+4. `OLLAMA_API_KEY`
 
 The detected provider automatically uses its own model/base URL/token-env settings from `llm.provider_settings`.
 
@@ -120,6 +122,7 @@ Set any configuration value using dot-notation.
 mmrpg-nai config set llm.provider_settings.openai.model gpt-4o
 mmrpg-nai config set llm.provider_settings.github_copilot.model gpt-5.4
 mmrpg-nai config set llm.provider_settings.ollama.api_base http://localhost:11434/v1
+mmrpg-nai config set llm.provider_settings.google_ai_studio.model gemini-2.5-flash
 
 # Narrator settings
 mmrpg-nai config set max_source_chars 40000   # max PDF text injected per session (0 = disabled)
@@ -145,6 +148,26 @@ mmrpg-nai config models
 # Filter results (case-insensitive substring match)
 mmrpg-nai config models --filter gpt
 mmrpg-nai config models -f llama
+```
+
+#### `config provider list`
+List all provider profiles and whether they are selected/detected.
+```bash
+mmrpg-nai config provider list
+```
+
+#### `config provider show [provider]`
+Show details for the selected provider or a specific provider.
+```bash
+mmrpg-nai config provider show
+mmrpg-nai config provider show google_ai_studio
+```
+
+#### `config provider select <provider>`
+Select the default provider profile.
+```bash
+mmrpg-nai config provider select openai
+mmrpg-nai config provider select google_ai_studio
 ```
 
 ---

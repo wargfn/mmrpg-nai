@@ -159,3 +159,16 @@ def test_config_models_uses_detected_openai_provider(data_dir):
     assert result.exit_code == 0
     assert "openai" in result.output.lower()
     assert "gpt-4o" in result.output
+
+
+def test_config_models_uses_detected_google_provider(data_dir):
+    with patch.dict(os.environ, {"GOOGLE_API_KEY": "AIza-test"}, clear=True):
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.models.list.return_value = _make_models_response("gemini-2.5-flash", "gemini-2.5-pro")
+            result = runner.invoke(app, ["config", "models", "--data-dir", data_dir])
+
+    assert result.exit_code == 0
+    assert "google_ai_studio" in result.output.lower()
+    assert "gemini-2.5-flash" in result.output
