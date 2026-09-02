@@ -215,6 +215,7 @@
         .map((entry, i) => `${i + 1}. [${entry.role || "unknown"}] ${entry.content || ""}`)
         .join("\\n");
       appendLine("Session Log", content, "sys");
+    }
 
     async function fetchSessionState(reset = false) {
       if (!activeSessionId) return;
