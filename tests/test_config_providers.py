@@ -56,3 +56,15 @@ def test_provider_select_unknown(data_dir):
     result = runner.invoke(app, ["config", "provider", "select", "unknown", "--data-dir", data_dir])
     assert result.exit_code != 0
     assert "Unknown provider" in result.output
+
+
+def test_provider_model_updates_selected_provider_model(data_dir):
+    runner.invoke(app, ["config", "provider", "select", "openai", "--data-dir", data_dir])
+    result = runner.invoke(app, ["config", "provider", "model", "gpt-4.1", "--data-dir", data_dir])
+    assert result.exit_code == 0
+    assert "Set model for provider openai: gpt-4.1" in result.output
+
+    cfg = Store(data_dir).load_config()
+    assert cfg.llm.provider == "openai"
+    assert cfg.llm.provider_settings["openai"].model == "gpt-4.1"
+    assert cfg.llm.model == "gpt-4.1"

@@ -170,6 +170,13 @@ mmrpg-nai config provider select openai
 mmrpg-nai config provider select google_ai_studio
 ```
 
+#### `config provider model <model-id>`
+Set the model for the currently selected provider.
+```bash
+mmrpg-nai config provider select openai
+mmrpg-nai config provider model gpt-4.1
+```
+
 ---
 
 ### `mmrpg-nai campaign` — Campaigns

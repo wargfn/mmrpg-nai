@@ -232,6 +232,26 @@ def config_provider_select(
     )
 
 
+@provider_app.command("model")
+def config_provider_model(
+    model: str = typer.Argument(..., help="New model ID for the currently selected provider"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Set the model for the currently selected provider."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    provider = cfg.llm.provider
+    ps = cfg.llm.provider_settings.get(provider)
+    if ps is None:
+        console.print(f"[red]Selected provider {provider!r} has no provider_settings entry.[/red]")
+        raise typer.Exit(1)
+
+    ps.model = model
+    cfg.llm.model = model
+    store.save_config(cfg)
+    console.print(f"[green]Set model for provider {provider}: {model}[/green]")
+
+
 @config_app.command("system-prompt")
 def config_system_prompt(
     prompt_file: Optional[Path] = typer.Option(None, help="Path to a .txt file with the system prompt"),
