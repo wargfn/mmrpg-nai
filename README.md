@@ -326,8 +326,9 @@ mmrpg-nai session remove-user <session-id> <user-id>
 ```
 
 #### `session run`
-Start an interactive narration session. Prompts you to pick a campaign and characters,
-then generates an AI recap of the previous session before play begins.
+Start an interactive narration session. Prompts you to pick a campaign, characters,
+and players/users, then generates an AI recap of the previous session before play begins.
+If no player characters or users exist yet, it can create them during startup.
 
 At **session startup**, if the campaign has a plan and/or progress summary, they are
 automatically injected into the Narrator's system prompt so the AI knows exactly where

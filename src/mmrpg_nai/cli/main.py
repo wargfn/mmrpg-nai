@@ -75,7 +75,12 @@ def _mask_token(token: str) -> str:
 def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
     users = store.users.list_all()
     if not users:
-        return []
+        console.print("[yellow]No users found.[/yellow]")
+        create_now = Prompt.ask("Create a new user now? [Y/n]", default="y").strip().lower()
+        if create_now not in {"", "y", "yes"}:
+            return []
+        new_user = _create_user_for_session(store)
+        return [new_user]
     table = Table("#", "ID", "Name", "Email", "Last Login")
     for i, user in enumerate(users, 1):
         last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
@@ -107,6 +112,33 @@ def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
         if selected_users:
             return selected_users
         console.print("[red]No matching users found. Try again.[/red]")
+
+
+def _create_user_for_session(store: Store) -> User:
+    first_name = Prompt.ask("First name").strip()
+    while not first_name:
+        console.print("[red]First name is required.[/red]")
+        first_name = Prompt.ask("First name").strip()
+    last_name = Prompt.ask("Last name", default="").strip()
+    email = Prompt.ask("Email", default="").strip()
+    notes = Prompt.ask("Notes", default="")
+    user = User(first_name=first_name, last_name=last_name, email=email, notes=notes)
+    store.users.save(user)
+    console.print(f"[green]Created user: {user.display_name} ({user.id[:8]})[/green]")
+    return user
+
+
+def _create_character_for_session(store: Store) -> Character:
+    name = Prompt.ask("Character name").strip()
+    while not name:
+        console.print("[red]Character name is required.[/red]")
+        name = Prompt.ask("Character name").strip()
+    alias = Prompt.ask("Alias", default="").strip()
+    background = Prompt.ask("Background", default="")
+    character = Character(name=name, alias=alias, background=background, is_npc=False)
+    store.characters.save(character)
+    console.print(f"[green]Created character: {character.name} ({character.id[:8]})[/green]")
+    return character
 
 
 # ---------------------------------------------------------------------------
@@ -941,6 +973,14 @@ def session_run(
                         matched = [c for c in pc_pool if c.id.startswith(token) or c.name.lower() == token.lower()]
                         selected.extend(matched)
                 party = selected or pc_pool
+        else:
+            console.print("[yellow]No player characters found.[/yellow]")
+            create_char = Prompt.ask("Create a new player character now? [Y/n]", default="y").strip().lower()
+            if create_char in {"", "y", "yes"}:
+                created_character = _create_character_for_session(store)
+                party = [created_character]
+                if created_character.id not in campaign.character_ids:
+                    campaign.character_ids.append(created_character.id)
 
         session_users = _select_users_for_session(store, campaign)
 
