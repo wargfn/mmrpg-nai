@@ -12,6 +12,8 @@
     .menu-bar { display: flex; gap: 0.4rem; margin: 0.8rem 0; }
     .menu-bar button { margin-bottom: 0; }
     .menu-panel { border: 1px solid #334155; border-radius: 8px; padding: 0.7rem; margin-bottom: 0.7rem; }
+    .action-row { display: flex; gap: 0.4rem; }
+    .menu-output { margin-top: 0.6rem; padding: 0.5rem; background: #020617; border: 1px solid #334155; border-radius: 8px; font-size: 0.85rem; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
     h1, h2 { margin-top: 0; }
     label, select, input, button { display: block; width: 100%; margin-bottom: 0.6rem; }
     select, input, button { padding: 0.55rem; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; }
@@ -59,6 +61,10 @@
         <h2>Users</h2>
         <label for="userSelect">Existing users</label>
         <select id="userSelect"></select>
+        <div class="action-row">
+          <button id="listUsersBtn">List Users</button>
+          <button id="showUserBtn">Show User</button>
+        </div>
         <label for="userFirstName">First name</label>
         <input id="userFirstName" placeholder="First name">
         <label for="userLastName">Last name (optional)</label>
@@ -71,23 +77,38 @@
         <button id="updateUserBtn">Update User</button>
         <button id="deleteUserBtn">Delete User</button>
         <button id="refreshUsersBtn">Refresh Users</button>
+        <div id="usersOutput" class="menu-output"></div>
       </div>
 
       <div id="campaignsPanel" class="menu-panel hidden">
         <h2>Campaigns</h2>
+        <label for="campaignMenuSelect">Existing campaigns</label>
+        <select id="campaignMenuSelect"></select>
+        <div class="action-row">
+          <button id="listCampaignsBtn">List Campaigns</button>
+          <button id="showCampaignBtn">Show Campaign</button>
+        </div>
         <label for="campaignName">Campaign name</label>
         <input id="campaignName" placeholder="Campaign name">
         <label for="campaignDescription">Campaign description</label>
         <input id="campaignDescription" placeholder="Campaign description">
         <button id="createCampaignBtn">Create Campaign</button>
         <button id="refreshCampaignsBtn">Refresh Campaigns</button>
+        <div id="campaignsOutput" class="menu-output"></div>
       </div>
 
       <div id="sessionsPanel" class="menu-panel hidden">
         <h2>Sessions</h2>
+        <label for="sessionMenuSelect">Existing sessions</label>
+        <select id="sessionMenuSelect"></select>
+        <div class="action-row">
+          <button id="listSessionsBtn">List Sessions</button>
+          <button id="showSessionBtn">Show Session</button>
+        </div>
         <button id="openSessionOptionsBtn">Open Session Start Options</button>
         <button id="refreshActiveSessionsBtn">Refresh Active Sessions</button>
         <button id="endActiveSessionBtn">End Active Session</button>
+        <div id="sessionsOutput" class="menu-output"></div>
       </div>
     </section>
 
@@ -114,6 +135,8 @@
     const chatLog = document.getElementById("chatLog");
     const activeLabel = document.getElementById("active");
     const sessionStartOptionsEl = document.getElementById("sessionStartOptions");
+    const campaignMenuSelectEl = document.getElementById("campaignMenuSelect");
+    const sessionMenuSelectEl = document.getElementById("sessionMenuSelect");
     const userSelectEl = document.getElementById("userSelect");
     const userFirstNameEl = document.getElementById("userFirstName");
     const userLastNameEl = document.getElementById("userLastName");
@@ -178,6 +201,11 @@
           el.classList.add("hidden");
         }
       }
+
+      function writeMenuOutput(elementId, data) {
+        const el = document.getElementById(elementId);
+        el.textContent = JSON.stringify(data, null, 2);
+      }
     }
 
     async function fetchSessionState(reset = false) {
@@ -218,19 +246,29 @@
       const data = await r.json();
 
       campaignEl.innerHTML = "";
+      campaignMenuSelectEl.innerHTML = "";
       for (const c of data.campaigns) {
         const opt = document.createElement("option");
         opt.value = c.id;
         opt.textContent = `${c.name} (${c.id.slice(0, 8)})`;
         campaignEl.appendChild(opt);
+        const menuOpt = document.createElement("option");
+        menuOpt.value = c.id;
+        menuOpt.textContent = `${c.name} (${c.id.slice(0, 8)})`;
+        campaignMenuSelectEl.appendChild(menuOpt);
       }
 
       resumeEl.innerHTML = "";
+      sessionMenuSelectEl.innerHTML = "";
       for (const s of data.sessions) {
         const opt = document.createElement("option");
         opt.value = s.id;
         opt.textContent = `${s.title} (${s.id.slice(0, 8)})`;
         resumeEl.appendChild(opt);
+        const menuOpt = document.createElement("option");
+        menuOpt.value = s.id;
+        menuOpt.textContent = `${s.title} (${s.id.slice(0, 8)})`;
+        sessionMenuSelectEl.appendChild(menuOpt);
       }
 
       cachedUsers = data.users || [];
@@ -333,6 +371,48 @@
       }
       await loadActiveSessions();
       await fetchSessionState(false);
+    }
+
+    async function listUsers() {
+      const r = await fetch("/users");
+      const data = await r.json();
+      writeMenuOutput("usersOutput", data);
+    }
+
+    async function showUser() {
+      const id = userSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/users/${id}`);
+      const data = await r.json();
+      writeMenuOutput("usersOutput", data);
+    }
+
+    async function listCampaigns() {
+      const r = await fetch("/campaigns");
+      const data = await r.json();
+      writeMenuOutput("campaignsOutput", data);
+    }
+
+    async function showCampaign() {
+      const id = campaignMenuSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/campaigns/${id}`);
+      const data = await r.json();
+      writeMenuOutput("campaignsOutput", data);
+    }
+
+    async function listSessions() {
+      const r = await fetch("/sessions");
+      const data = await r.json();
+      writeMenuOutput("sessionsOutput", data);
+    }
+
+    async function showSession() {
+      const id = sessionMenuSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/sessions/${id}`);
+      const data = await r.json();
+      writeMenuOutput("sessionsOutput", data);
     }
 
     document.getElementById("sessionStartBtn").addEventListener("click", async () => {
@@ -489,6 +569,12 @@
     document.getElementById("menuSessionsBtn").addEventListener("click", () => showMenuPanel("sessionsPanel"));
     document.getElementById("createCampaignBtn").addEventListener("click", createCampaign);
     document.getElementById("refreshCampaignsBtn").addEventListener("click", loadBootstrap);
+    document.getElementById("listUsersBtn").addEventListener("click", listUsers);
+    document.getElementById("showUserBtn").addEventListener("click", showUser);
+    document.getElementById("listCampaignsBtn").addEventListener("click", listCampaigns);
+    document.getElementById("showCampaignBtn").addEventListener("click", showCampaign);
+    document.getElementById("listSessionsBtn").addEventListener("click", listSessions);
+    document.getElementById("showSessionBtn").addEventListener("click", showSession);
     document.getElementById("createUserBtn").addEventListener("click", createUser);
     document.getElementById("updateUserBtn").addEventListener("click", updateUser);
     document.getElementById("deleteUserBtn").addEventListener("click", deleteUser);
