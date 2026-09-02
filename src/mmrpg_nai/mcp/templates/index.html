@@ -105,10 +105,12 @@
           <button id="listSessionsBtn">List Sessions</button>
           <button id="showSessionBtn">Show Session</button>
         </div>
+        <button id="showSessionLogBtn">Show Session Log</button>
         <button id="openSessionOptionsBtn">Open Session Start Options</button>
         <button id="refreshActiveSessionsBtn">Refresh Active Sessions</button>
         <button id="endActiveSessionBtn">End Active Session</button>
         <div id="sessionsOutput" class="menu-output"></div>
+        <div id="sessionLogOutput" class="menu-output"></div>
       </div>
     </section>
 
@@ -205,6 +207,18 @@
       function writeMenuOutput(elementId, data) {
         const el = document.getElementById(elementId);
         el.textContent = JSON.stringify(data, null, 2);
+      }
+
+      function writeSessionLogOutput(data) {
+        const el = document.getElementById("sessionLogOutput");
+        const log = Array.isArray(data?.log) ? data.log : [];
+        if (log.length === 0) {
+          el.textContent = "No log entries for this session.";
+          return;
+        }
+        el.textContent = log
+          .map((entry, i) => `${i + 1}. [${entry.role || "unknown"}] ${entry.content || ""}`)
+          .join("\\n");
       }
     }
 
@@ -415,6 +429,14 @@
       writeMenuOutput("sessionsOutput", data);
     }
 
+    async function showSessionLog() {
+      const id = sessionMenuSelectEl.value;
+      if (!id) return;
+      const r = await fetch(`/sessions/${id}`);
+      const data = await r.json();
+      writeSessionLogOutput(data);
+    }
+
     document.getElementById("sessionStartBtn").addEventListener("click", async () => {
       sessionStartOptionsEl.classList.toggle("hidden");
       if (!sessionStartOptionsEl.classList.contains("hidden")) {
@@ -575,6 +597,7 @@
     document.getElementById("showCampaignBtn").addEventListener("click", showCampaign);
     document.getElementById("listSessionsBtn").addEventListener("click", listSessions);
     document.getElementById("showSessionBtn").addEventListener("click", showSession);
+    document.getElementById("showSessionLogBtn").addEventListener("click", showSessionLog);
     document.getElementById("createUserBtn").addEventListener("click", createUser);
     document.getElementById("updateUserBtn").addEventListener("click", updateUser);
     document.getElementById("deleteUserBtn").addEventListener("click", deleteUser);
