@@ -311,6 +311,9 @@ class LLMConfig(BaseModel):
         return None
 
     def resolved(self, env: Mapping[str, str] | None = None) -> "LLMConfig":
+        managed_envs = {ps.api_key_env for ps in self.provider_settings.values()}
+        if self.api_key_env not in managed_envs:
+            return self
         detected = self.detect_provider(env)
         target_provider = detected or self.provider
         selected = self.provider_settings.get(target_provider)

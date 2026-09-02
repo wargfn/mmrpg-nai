@@ -172,6 +172,7 @@ def config_provider_list(
             "✓" if detected_provider == name else "",
         )
     console.print(table)
+    console.print(f"[dim]Available providers: {', '.join(sorted(llm_cfg.provider_settings.keys()))}[/dim]")
     console.print(f"[dim]Runtime active provider: {resolved.provider}[/dim]")
 
 
