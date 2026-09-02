@@ -199,23 +199,22 @@
           el.classList.add("hidden");
         }
       }
-
-      function writeMenuOutput(title, data) {
-        appendLine(title, JSON.stringify(data, null, 2), "sys");
-      }
-
-      function writeSessionLogOutput(data) {
-        const log = Array.isArray(data?.log) ? data.log : [];
-        if (log.length === 0) {
-          appendLine("Session Log", "No log entries for this session.", "sys");
-          return;
-        }
-        const content = log
-          .map((entry, i) => `${i + 1}. [${entry.role || "unknown"}] ${entry.content || ""}`)
-          .join("\\n");
-        appendLine("Session Log", content, "sys");
-      }
     }
+
+    function writeMenuOutput(title, data) {
+      appendLine(title, JSON.stringify(data, null, 2), "sys");
+    }
+
+    function writeSessionLogOutput(data) {
+      const log = Array.isArray(data?.log) ? data.log : [];
+      if (log.length === 0) {
+        appendLine("Session Log", "No log entries for this session.", "sys");
+        return;
+      }
+      const content = log
+        .map((entry, i) => `${i + 1}. [${entry.role || "unknown"}] ${entry.content || ""}`)
+        .join("\\n");
+      appendLine("Session Log", content, "sys");
 
     async function fetchSessionState(reset = false) {
       if (!activeSessionId) return;
@@ -385,6 +384,11 @@
     async function listUsers() {
       const r = await fetch("/users");
       const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not list users", "sys");
+        return;
+      }
+      await loadBootstrap();
       writeMenuOutput("Users List", data);
     }
 
@@ -393,12 +397,23 @@
       if (!id) return;
       const r = await fetch(`/users/${id}`);
       const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not show user", "sys");
+        return;
+      }
+      userSelectEl.value = data.id;
+      fillUserFormFromSelection();
       writeMenuOutput("User Detail", data);
     }
 
     async function listCampaigns() {
       const r = await fetch("/campaigns");
       const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not list campaigns", "sys");
+        return;
+      }
+      await loadBootstrap();
       writeMenuOutput("Campaigns List", data);
     }
 
@@ -407,12 +422,23 @@
       if (!id) return;
       const r = await fetch(`/campaigns/${id}`);
       const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not show campaign", "sys");
+        return;
+      }
+      campaignMenuSelectEl.value = data.id;
+      campaignEl.value = data.id;
       writeMenuOutput("Campaign Detail", data);
     }
 
     async function listSessions() {
       const r = await fetch("/sessions");
       const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not list sessions", "sys");
+        return;
+      }
+      await loadBootstrap();
       writeMenuOutput("Sessions List", data);
     }
 
@@ -421,6 +447,12 @@
       if (!id) return;
       const r = await fetch(`/sessions/${id}`);
       const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not show session", "sys");
+        return;
+      }
+      sessionMenuSelectEl.value = data.id;
+      resumeEl.value = data.id;
       writeMenuOutput("Session Detail", data);
     }
 
@@ -429,6 +461,12 @@
       if (!id) return;
       const r = await fetch(`/sessions/${id}`);
       const data = await r.json();
+      if (!r.ok) {
+        appendLine("System", data.detail || "Could not show session log", "sys");
+        return;
+      }
+      sessionMenuSelectEl.value = data.id;
+      resumeEl.value = data.id;
       writeSessionLogOutput(data);
     }
 
