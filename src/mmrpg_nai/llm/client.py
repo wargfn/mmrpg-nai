@@ -27,14 +27,16 @@ def _prepare_messages(cfg: LLMConfig, messages: list[dict]) -> list[dict]:
         return messages
 
     normalized: list[dict] = []
-    seen_first_system = False
+    system_index = 0
     for m in messages:
         role = m.get("role", "")
         content = m.get("content", "")
         if role == "system":
-            if not seen_first_system:
-                normalized.append(m)
-                seen_first_system = True
+            if system_index == 0:
+                normalized.append({
+                    "role": "user",
+                    "content": f"[SYSTEM INSTRUCTIONS]: {content}",
+                })
             else:
                 rewritten = content
                 if not rewritten.startswith("[OUT-OF-GAME NARRATOR DIRECTION]:"):
@@ -43,6 +45,7 @@ def _prepare_messages(cfg: LLMConfig, messages: list[dict]) -> list[dict]:
                     "role": "user",
                     "content": rewritten,
                 })
+            system_index += 1
             continue
         normalized.append(m)
     return normalized

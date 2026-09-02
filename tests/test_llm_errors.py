@@ -199,7 +199,8 @@ def test_prepare_messages_google_rewrites_non_leading_system_messages():
 
     prepared = _prepare_messages(cfg_google, messages)
 
-    assert prepared[0]["role"] == "system"
+    assert prepared[0]["role"] == "user"
+    assert prepared[0]["content"].startswith("[SYSTEM INSTRUCTIONS]:")
     assert prepared[2]["role"] == "user"
     assert "OUT-OF-GAME NARRATOR DIRECTION" in prepared[2]["content"]
 
@@ -212,3 +213,15 @@ def test_prepare_messages_non_google_keeps_messages_unchanged():
     ]
     prepared = _prepare_messages(cfg_openai, messages)
     assert prepared == messages
+
+
+def test_prepare_messages_google_with_only_system_messages_still_has_user_content():
+    cfg_google = LLMConfig().resolved({"GOOGLE_API_KEY": "AIza-test"})
+    messages = [
+        {"role": "system", "content": "core rules"},
+        {"role": "system", "content": "meta note"},
+    ]
+    prepared = _prepare_messages(cfg_google, messages)
+    assert prepared[0]["role"] == "user"
+    assert prepared[1]["role"] == "user"
+    assert "[OUT-OF-GAME NARRATOR DIRECTION]:" in prepared[1]["content"]
