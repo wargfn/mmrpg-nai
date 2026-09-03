@@ -100,6 +100,7 @@ Commands:
   adventure  Manage adventure templates
   pdf        Manage PDF source materials
   serve      Start the MCP REST service
+  serve-discord  Start Discord bridge process for MCP sessions
 ```
 
 All commands accept `--data-dir <path>` (or env var `MMRPG_DATA_DIR`) to point at a
@@ -657,6 +658,32 @@ mmrpg-nai serve --host 0.0.0.0 --port 9000
 **API docs:** `http://127.0.0.1:8000/docs` (Swagger UI)
 
 **Web front end:** `http://127.0.0.1:8000/`
+
+### `mmrpg-nai serve-discord` — Discord bridge process
+
+Run a standalone Discord bot process that listens to one Discord channel, forwards messages
+to an active MCP session, and posts Narrator responses back into the same channel.
+
+```bash
+# 1) Start MCP server
+mmrpg-nai serve
+
+# 2) In another process/shell, start Discord bridge
+export DISCORD_BOT_TOKEN=...
+mmrpg-nai serve-discord --session-id <session-id> --channel-id <discord-channel-id>
+```
+
+If the session is no longer active in MCP memory, the bridge can auto-resume it (default enabled)
+by creating a follow-up active session via `/web/session/start`.
+
+| Option | Default | Description |
+|---|---|---|
+| `--session-id` | required | Active or resumable session ID |
+| `--channel-id` | required | Discord channel ID to consume and post messages |
+| `--mcp-base-url` | `http://127.0.0.1:8000` | MCP REST base URL |
+| `--token-env` | `DISCORD_BOT_TOKEN` | Env var with Discord bot token |
+| `--resume-if-inactive/--no-resume-if-inactive` | enabled | Auto-resume session when inactive |
+| `--command-prefix` | empty | Optional prefix filter (e.g. `!nai`) |
 
 **Available endpoints:**
 

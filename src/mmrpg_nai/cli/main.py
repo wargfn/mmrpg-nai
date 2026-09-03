@@ -1595,5 +1595,45 @@ def serve(
     uvicorn.run(fastapi_app, host=host, port=port)
 
 
+@app.command("serve-discord")
+def serve_discord(
+    session_id: str = typer.Option(..., help="Active session ID (or a resumable session ID)"),
+    channel_id: int = typer.Option(..., help="Discord channel ID to listen and post in"),
+    mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
+    token_env: str = typer.Option("DISCORD_BOT_TOKEN", help="Environment variable containing Discord bot token"),
+    resume_if_inactive: bool = typer.Option(
+        True,
+        "--resume-if-inactive/--no-resume-if-inactive",
+        help="Auto-resume session through MCP if target session is inactive",
+    ),
+    command_prefix: str = typer.Option(
+        "",
+        help="Optional command prefix to filter messages (e.g. !nai)",
+    ),
+) -> None:
+    """Start Discord bridge process that relays channel messages to an MCP session."""
+    from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+    token_value = os.environ.get(token_env, "").strip()
+    if not token_value:
+        console.print(f"[red]{token_env} is not set.[/red]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[dim]Starting Discord bridge on channel {channel_id} -> session {session_id} "
+        f"via {mcp_base_url}[/dim]"
+    )
+    run_discord_bridge(
+        DiscordBridgeSettings(
+            discord_token=token_value,
+            channel_id=channel_id,
+            session_id=session_id,
+            mcp_base_url=mcp_base_url,
+            resume_if_inactive=resume_if_inactive,
+            command_prefix=command_prefix,
+        )
+    )
+
+
 if __name__ == "__main__":
     app()
