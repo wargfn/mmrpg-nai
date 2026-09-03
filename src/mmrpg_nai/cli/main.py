@@ -7,6 +7,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 import typer
 from rich.console import Console
@@ -70,6 +72,36 @@ def _mask_token(token: str) -> str:
     if len(token) <= 12:
         return f"{token[:2]}{'*' * (len(token) - 4)}{token[-2:]}"
     return f"{token[:4]}{'*' * (len(token) - 8)}{token[-4:]}"
+
+
+def _mcp_get_json(base_url: str, path: str) -> dict[str, Any]:
+    req = urlrequest.Request(f"{base_url.rstrip('/')}{path}", method="GET")
+    try:
+        with urlrequest.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urlerror.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
+    except urlerror.URLError as exc:
+        raise RuntimeError(f"Could not reach MCP service at {base_url}: {exc}") from exc
+
+
+def _mcp_post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    req = urlrequest.Request(
+        f"{base_url.rstrip('/')}{path}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urlerror.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
+    except urlerror.URLError as exc:
+        raise RuntimeError(f"Could not reach MCP service at {base_url}: {exc}") from exc
 
 
 def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
@@ -1220,6 +1252,109 @@ def session_query(
         raise typer.Exit(1)
 
     console.print(Panel(Markdown(answer), title="[bold cyan]Rules Query[/bold cyan]"))
+
+
+@session_app.command("attach")
+def session_attach(
+    session_id: Optional[str] = typer.Option(None, help="Active session ID or prefix (optional)"),
+    mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
+) -> None:
+    """Attach CLI to an active MCP web session and chat through it."""
+    import re as _re
+
+    try:
+        active = _mcp_get_json(mcp_base_url, "/web/active-sessions")
+    except Exception as exc:
+        console.print(Panel(str(exc), title="[bold red]⚠ MCP connection error[/bold red]", border_style="red"))
+        raise typer.Exit(1)
+
+    sessions = active.get("sessions", [])
+    if not sessions:
+        console.print("[yellow]No active sessions found on MCP service.[/yellow]")
+        raise typer.Exit(1)
+
+    selected: dict[str, Any] | None = None
+    if session_id:
+        exact = next((s for s in sessions if s.get("id") == session_id), None)
+        if exact is not None:
+            selected = exact
+        else:
+            matches = [s for s in sessions if str(s.get("id", "")).startswith(session_id)]
+            if len(matches) == 1:
+                selected = matches[0]
+            elif len(matches) > 1:
+                console.print("[red]Session prefix matches multiple active sessions; be more specific.[/red]")
+                raise typer.Exit(1)
+    else:
+        table = Table("#", "Session ID", "Campaign ID", "Title", "Players")
+        for i, s in enumerate(sessions, 1):
+            table.add_row(
+                str(i),
+                str(s.get("id", ""))[:8],
+                str(s.get("campaign_id", ""))[:8],
+                str(s.get("title", "")),
+                str(len(s.get("user_ids", []) or [])),
+            )
+        console.print(table)
+        raw = Prompt.ask("Select active session by number or ID prefix")
+        if raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(sessions):
+                selected = sessions[idx]
+        if selected is None:
+            matches = [s for s in sessions if str(s.get("id", "")).startswith(raw.strip())]
+            if len(matches) == 1:
+                selected = matches[0]
+            elif len(matches) > 1:
+                console.print("[red]Session prefix matches multiple active sessions; be more specific.[/red]")
+                raise typer.Exit(1)
+
+    if selected is None:
+        console.print(f"[red]Active session not found: {session_id or '(selection)'}[/red]")
+        raise typer.Exit(1)
+
+    selected_id = str(selected.get("id", ""))
+    _META_RE = _re.compile(r"^\s*\[(.+)\]\s*$")
+    console.print(
+        Panel(
+            f"[bold]Attached Session:[/bold] {selected.get('title', '—')} ({selected_id[:8]})\n"
+            f"[bold]Campaign:[/bold] {str(selected.get('campaign_id', ''))[:8]}\n"
+            f"[dim]MCP: {mcp_base_url}[/dim]\n\n"
+            f"[dim]Type your action/dialogue. Use [square brackets] for meta. "
+            f"Enter 'quit' or 'exit' to detach.[/dim]",
+            title="🔗 Attached to Active Session",
+        )
+    )
+
+    while True:
+        try:
+            player_input = Prompt.ask("[bold green]You[/bold green]")
+        except (EOFError, KeyboardInterrupt):
+            break
+        if player_input.strip().lower() in {"quit", "exit", "q"}:
+            break
+        if not player_input.strip():
+            continue
+
+        try:
+            resp = _mcp_post_json(mcp_base_url, f"/web/session/{selected_id}/chat", {"message": player_input})
+        except Exception as exc:
+            console.print(Panel(str(exc), title="[bold red]⚠ MCP chat error[/bold red]", border_style="red"))
+            break
+
+        mode = str(resp.get("mode", "narrate"))
+        output = str(resp.get("response", ""))
+        if _META_RE.match(player_input):
+            console.print("[bold yellow]Narrator (meta)[/bold yellow]")
+        else:
+            console.print("[bold blue]Narrator[/bold blue]")
+        if mode == "meta":
+            console.print(Panel(Markdown(output), border_style="yellow"))
+        else:
+            console.print(Panel(Markdown(output), border_style="blue"))
+        console.print()
+
+    console.print("[bold]Detached from active session.[/bold]")
 
 
 @session_app.command("log")

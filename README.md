@@ -374,6 +374,17 @@ mmrpg-nai session query "How do melee checks work?" --campaign-id <campaign-id>
 mmrpg-nai session query "How much focus does this character have?" --session-id <session-id>
 ```
 
+#### `session attach`
+Attach the CLI to an active MCP web session so this terminal can participate in the same live session.
+Use this with a separately running `mmrpg-nai serve` process.
+```bash
+# Attach by session id/prefix
+mmrpg-nai session attach --session-id <active-session-id>
+
+# Or choose interactively from active sessions
+mmrpg-nai session attach
+```
+
 #### `session log <session-id>`
 Print the full conversation log for a session.
 ```bash
