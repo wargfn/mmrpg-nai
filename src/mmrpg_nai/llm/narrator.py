@@ -201,6 +201,33 @@ class Narrator:
         self.store.append_log(self._session)
         return response
 
+    def query_rules(self, question: str, stream: bool = False, output_callback=None) -> str:
+        """Query the model about rules, stats, and checks using current session context."""
+        query_prompt = (
+            "Answer this MMRPG rules/stats/checks question using the provided campaign, character, "
+            "session, and source-material context. If information is missing, say what is missing "
+            "instead of inventing it.\n\n"
+            f"Question: {question}"
+        )
+        messages = [*self._messages, {"role": "user", "content": query_prompt}]
+        result = self.llm.complete(messages, stream=stream)
+
+        if isinstance(result, str):
+            return result
+
+        use_default_output = output_callback is None
+        if output_callback is None:
+            def output_callback(chunk: str) -> None:
+                print(chunk, end="", flush=True)
+
+        chunks: list[str] = []
+        for chunk in result:
+            output_callback(chunk)
+            chunks.append(chunk)
+        if use_default_output:
+            print()
+        return "".join(chunks)
+
     def recap_last_session(self, last_session: "Session") -> str:
         """Generate a brief AI recap of the previous session to open the current one."""
         if not last_session.log:

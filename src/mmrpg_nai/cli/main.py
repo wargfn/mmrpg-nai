@@ -1147,6 +1147,81 @@ def session_run(
             console.print(f"[yellow]Could not update campaign progress: {exc}[/yellow]")
 
 
+@session_app.command("query")
+def session_query(
+    question: str = typer.Argument(..., help="Rules/stats/checks question for the LLM"),
+    campaign_id: Optional[str] = typer.Option(None, help="Campaign ID or prefix"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID or prefix"),
+    character_ids: str = typer.Option(
+        "",
+        help="Comma-separated character IDs/prefixes to include in context (optional)",
+    ),
+    include_source_materials: bool = typer.Option(
+        True,
+        "--include-source-materials/--no-include-source-materials",
+        help="Include campaign source materials in context",
+    ),
+    stream: bool = typer.Option(False, help="Stream response"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Query the LLM with loaded context for rules, stats, and checks."""
+    from mmrpg_nai.llm.narrator import Narrator
+
+    if not campaign_id and not session_id:
+        console.print("[red]Provide either --campaign-id or --session-id.[/red]")
+        raise typer.Exit(1)
+
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+
+    if session_id:
+        session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
+        campaign = store.campaigns.load(session.campaign_id)
+        if campaign is None:
+            console.print(f"[red]Campaign not found: {session.campaign_id}[/red]")
+            raise typer.Exit(1)
+    else:
+        campaign = _load_campaign_or_exit(store, campaign_id or "")
+        session = Session(
+            campaign_id=campaign.id,
+            title="Context Query",
+            session_number=0,
+            participants=[],
+            user_ids=[],
+        )
+
+    party: list[Character] = []
+    requested_ids = [part.strip() for part in character_ids.split(",") if part.strip()]
+    if requested_ids:
+        seen_char_ids: set[str] = set()
+        for rid in requested_ids:
+            ch = _load_by_prefix_or_exact(store.characters, rid, "Character")
+            if ch.id not in seen_char_ids:
+                party.append(ch)
+                seen_char_ids.add(ch.id)
+    else:
+        base_ids = session.participants or campaign.character_ids
+        party = [c for cid in base_ids if (c := store.characters.load(cid)) is not None]
+
+    source_materials = []
+    if include_source_materials:
+        source_materials = [
+            m
+            for mid in campaign.source_material_ids
+            if (m := store.source_materials.load(mid)) is not None
+        ]
+
+    narrator = Narrator(cfg, store)
+    narrator.start_session(session, campaign, party, source_materials=source_materials)
+    try:
+        answer = narrator.query_rules(question, stream=stream)
+    except Exception as exc:
+        console.print(Panel(str(exc), title="[bold red]⚠ Query failed[/bold red]", border_style="red"))
+        raise typer.Exit(1)
+
+    console.print(Panel(Markdown(answer), title="[bold cyan]Rules Query[/bold cyan]"))
+
+
 @session_app.command("log")
 def session_log(
     session_id: str = typer.Argument(...),

@@ -365,6 +365,14 @@ mmrpg-nai session run --no-stream
 [tone down the violence — there are kids watching]
 ```
 
+#### `session query <question>`
+Ask the configured LLM a rules/stats/checks question using loaded campaign/session context.
+You must provide either `--campaign-id` or `--session-id`.
+```bash
+mmrpg-nai session query "How do melee checks work?" --campaign-id <campaign-id>
+mmrpg-nai session query "How much focus does this character have?" --session-id <session-id>
+```
+
 #### `session log <session-id>`
 Print the full conversation log for a session.
 ```bash
