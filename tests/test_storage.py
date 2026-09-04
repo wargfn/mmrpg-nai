@@ -82,6 +82,13 @@ def test_config_roundtrip(store: Store):
     assert loaded.system_prompt == "Custom prompt"
 
 
+def test_load_config_invalid_json_uses_defaults(store: Store):
+    (store.base_dir / "config.json").write_text('{"llm": {"provider": "openai"', encoding="utf-8")
+    loaded = store.load_config()
+    assert isinstance(loaded, NarratorConfig)
+    assert loaded.llm.provider == "github_copilot"
+
+
 def test_store_find(store: Store):
     char1 = Character(name="Spider-Man", is_npc=False)
     char2 = Character(name="Hydra Agent", is_npc=True)
