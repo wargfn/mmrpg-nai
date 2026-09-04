@@ -172,3 +172,16 @@ def test_config_models_uses_detected_google_provider(data_dir):
     assert result.exit_code == 0
     assert "google_ai_studio" in result.output.lower()
     assert "gemini-2.5-flash" in result.output
+
+
+def test_config_models_uses_detected_grok_provider(data_dir):
+    with patch.dict(os.environ, {"XAI_API_KEY": "xai-test"}, clear=True):
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.models.list.return_value = _make_models_response("grok-4", "grok-4-fast")
+            result = runner.invoke(app, ["config", "models", "--data-dir", data_dir])
+
+    assert result.exit_code == 0
+    assert "grok" in result.output.lower()
+    assert "grok-4" in result.output

@@ -55,6 +55,7 @@ def _provider_label(provider: str) -> str:
     labels = {
         "google_ai_studio": "Google AI Studio",
         "openai": "OpenAI",
+        "grok": "xAI Grok",
         "github_copilot": "GitHub Copilot",
         "ollama": "OpenWebUI/Ollama",
     }

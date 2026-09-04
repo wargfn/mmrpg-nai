@@ -282,6 +282,13 @@ class LLMConfig(BaseModel):
             max_tokens=4096,
             temperature=0.8,
         ),
+        "grok": LLMProviderSettings(
+            model="grok-4",
+            api_base="https://api.x.ai/v1",
+            api_key_env="XAI_API_KEY",
+            max_tokens=4096,
+            temperature=0.8,
+        ),
         "github_copilot": LLMProviderSettings(
             model="gpt-5.4",
             api_base="https://api.githubcopilot.com",
@@ -304,6 +311,8 @@ class LLMConfig(BaseModel):
             return "google_ai_studio"
         if (env_map.get("OPENAI_API_KEY") or "").strip():
             return "openai"
+        if (env_map.get("XAI_API_KEY") or "").strip():
+            return "grok"
         if (env_map.get("GITHUB_TOKEN") or "").strip():
             return "github_copilot"
         if (env_map.get("OLLAMA_API_KEY") or "").strip():

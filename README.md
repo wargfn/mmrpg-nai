@@ -31,6 +31,7 @@ It supports **Google AI Studio**, **OpenAI**, **GitHub Copilot**, and **OpenWebU
 - One of:
   - `GOOGLE_API_KEY` (Google AI Studio)
   - `OPENAI_API_KEY` (OpenAI)
+  - `XAI_API_KEY` (xAI Grok)
   - `GITHUB_TOKEN` with `models` permission (GitHub Copilot)
   - `OLLAMA_API_KEY` (OpenWebUI/Ollama)
 - Optional: `pymupdf` for PDF ingestion (included in requirements)
@@ -49,15 +50,16 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
-# Edit .env and set one of: GOOGLE_API_KEY, OPENAI_API_KEY, GITHUB_TOKEN, or OLLAMA_API_KEY
+# Edit .env and set one of: GOOGLE_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GITHUB_TOKEN, or OLLAMA_API_KEY
 export $(grep -v '^#' .env | xargs)
 ```
 
 Provider detection order is:
 1. `GOOGLE_API_KEY`
 2. `OPENAI_API_KEY`
-3. `GITHUB_TOKEN`
-4. `OLLAMA_API_KEY`
+3. `XAI_API_KEY`
+4. `GITHUB_TOKEN`
+5. `OLLAMA_API_KEY`
 
 The detected provider automatically uses its own model/base URL/token-env settings from `llm.provider_settings`.
 
@@ -124,6 +126,7 @@ mmrpg-nai config set llm.provider_settings.openai.model gpt-4o
 mmrpg-nai config set llm.provider_settings.github_copilot.model gpt-5.4
 mmrpg-nai config set llm.provider_settings.ollama.api_base http://localhost:11434/v1
 mmrpg-nai config set llm.provider_settings.google_ai_studio.model gemini-2.5-flash
+mmrpg-nai config set llm.provider_settings.grok.model grok-4
 
 # Narrator settings
 mmrpg-nai config set max_source_chars 40000   # max PDF text injected per session (0 = disabled)

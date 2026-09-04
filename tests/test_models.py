@@ -103,6 +103,13 @@ def test_llm_config_detects_ollama_provider():
     assert resolved.api_key_env == "OLLAMA_API_KEY"
 
 
+def test_llm_config_detects_grok_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"XAI_API_KEY": "xai-test"})
+    assert resolved.provider == "grok"
+    assert resolved.api_key_env == "XAI_API_KEY"
+
+
 def test_llm_config_uses_selected_provider_without_detected_env():
     cfg = LLMConfig(provider="openai")
     resolved = cfg.resolved({})

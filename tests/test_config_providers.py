@@ -25,6 +25,7 @@ def test_provider_list_shows_known_providers(data_dir):
     assert result.exit_code == 0
     assert "google_ai_studio" in result.output
     assert "openai" in result.output
+    assert "grok" in result.output
     assert "github_copilot" in result.output
     assert "ollama" in result.output
 
