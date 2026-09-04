@@ -34,6 +34,7 @@ It supports **Google AI Studio**, **OpenAI**, **GitHub Copilot**, and **OpenWebU
   - `XAI_API_KEY` (xAI Grok)
   - `GITHUB_TOKEN` with `models` permission (GitHub Copilot)
   - `OLLAMA_API_KEY` (OpenWebUI/Ollama)
+  - `OPENWEBUI_API_KEY` (OpenWebUI)
 - Optional: `pymupdf` for PDF ingestion (included in requirements)
 
 ## Installation
@@ -50,7 +51,7 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
-# Edit .env and set one of: GOOGLE_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GITHUB_TOKEN, or OLLAMA_API_KEY
+# Edit .env and set one of: GOOGLE_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GITHUB_TOKEN, OLLAMA_API_KEY, or OPENWEBUI_API_KEY
 export $(grep -v '^#' .env | xargs)
 ```
 
@@ -60,6 +61,7 @@ Provider detection order is:
 3. `XAI_API_KEY`
 4. `GITHUB_TOKEN`
 5. `OLLAMA_API_KEY`
+6. `OPENWEBUI_API_KEY`
 
 The detected provider automatically uses its own model/base URL/token-env settings from `llm.provider_settings`.
 
@@ -125,6 +127,7 @@ Set any configuration value using dot-notation.
 mmrpg-nai config set llm.provider_settings.openai.model gpt-4o
 mmrpg-nai config set llm.provider_settings.github_copilot.model gpt-5.4
 mmrpg-nai config set llm.provider_settings.ollama.api_base http://localhost:11434/v1
+mmrpg-nai config set llm.provider_settings.openwebui.api_base http://localhost:3000/ollama/v1
 mmrpg-nai config set llm.provider_settings.google_ai_studio.model gemini-2.5-flash
 mmrpg-nai config set llm.provider_settings.grok.model grok-4
 

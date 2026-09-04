@@ -185,3 +185,16 @@ def test_config_models_uses_detected_grok_provider(data_dir):
     assert result.exit_code == 0
     assert "grok" in result.output.lower()
     assert "grok-4" in result.output
+
+
+def test_config_models_uses_detected_openwebui_provider(data_dir):
+    with patch.dict(os.environ, {"OPENWEBUI_API_KEY": "owui-test"}, clear=True):
+        with patch("openai.OpenAI") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.models.list.return_value = _make_models_response("llama3.1", "qwen3")
+            result = runner.invoke(app, ["config", "models", "--data-dir", data_dir])
+
+    assert result.exit_code == 0
+    assert "openwebui" in result.output.lower()
+    assert "llama3.1" in result.output

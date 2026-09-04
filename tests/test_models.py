@@ -110,6 +110,13 @@ def test_llm_config_detects_grok_provider():
     assert resolved.api_key_env == "XAI_API_KEY"
 
 
+def test_llm_config_detects_openwebui_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"OPENWEBUI_API_KEY": "owui-test"})
+    assert resolved.provider == "openwebui"
+    assert resolved.api_key_env == "OPENWEBUI_API_KEY"
+
+
 def test_llm_config_uses_selected_provider_without_detected_env():
     cfg = LLMConfig(provider="openai")
     resolved = cfg.resolved({})

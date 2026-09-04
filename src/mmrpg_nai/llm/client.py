@@ -58,6 +58,7 @@ def _provider_label(provider: str) -> str:
         "grok": "xAI Grok",
         "github_copilot": "GitHub Copilot",
         "ollama": "OpenWebUI/Ollama",
+        "openwebui": "OpenWebUI",
     }
     return labels.get(provider, provider)
 

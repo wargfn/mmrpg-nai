@@ -303,6 +303,13 @@ class LLMConfig(BaseModel):
             max_tokens=4096,
             temperature=0.8,
         ),
+        "openwebui": LLMProviderSettings(
+            model="llama3.1",
+            api_base="http://localhost:3000/ollama/v1",
+            api_key_env="OPENWEBUI_API_KEY",
+            max_tokens=4096,
+            temperature=0.8,
+        ),
     })
 
     def detect_provider(self, env: Mapping[str, str] | None = None) -> str | None:
@@ -317,6 +324,8 @@ class LLMConfig(BaseModel):
             return "github_copilot"
         if (env_map.get("OLLAMA_API_KEY") or "").strip():
             return "ollama"
+        if (env_map.get("OPENWEBUI_API_KEY") or "").strip():
+            return "openwebui"
         return None
 
     def resolved(self, env: Mapping[str, str] | None = None) -> "LLMConfig":
