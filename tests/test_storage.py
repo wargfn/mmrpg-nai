@@ -432,6 +432,16 @@ def test_user_list_shows_last_login(store: Store):
     assert "Storm" in result.output
 
 
+def test_users_command_alias_removed(store: Store):
+    from typer.testing import CliRunner
+    from mmrpg_nai.cli.main import app
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["users", "list", "--data-dir", str(store.base_dir)])
+    assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
 def test_load_corrupt_json_returns_none(store: Store):
     bad = store.base_dir / "campaigns" / "bad.json"
     bad.write_text("{not-json", encoding="utf-8")

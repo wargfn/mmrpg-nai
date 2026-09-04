@@ -1383,7 +1383,6 @@ def session_log(
 
 user_app = typer.Typer(help="Manage users/players.")
 app.add_typer(user_app, name="user")
-app.add_typer(user_app, name="users")
 
 
 @user_app.command("list")
