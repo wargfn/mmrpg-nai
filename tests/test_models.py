@@ -124,6 +124,26 @@ def test_llm_config_uses_selected_provider_without_detected_env():
     assert resolved.api_key_env == "OPENAI_API_KEY"
 
 
+def test_llm_config_backfills_missing_provider_settings():
+    cfg = LLMConfig.model_validate(
+        {
+            "provider": "github_copilot",
+            "provider_settings": {
+                "openai": {
+                    "model": "custom-openai",
+                    "api_base": "https://api.openai.com/v1",
+                    "api_key_env": "OPENAI_API_KEY",
+                    "max_tokens": 4096,
+                    "temperature": 0.8,
+                }
+            },
+        }
+    )
+    assert "openwebui" in cfg.provider_settings
+    assert "grok" in cfg.provider_settings
+    assert cfg.provider_settings["openai"].model == "custom-openai"
+
+
 def test_source_material():
     sm = SourceMaterial(title="Core Rulebook", file_path="/tmp/core.pdf", page_count=300)
     assert sm.title == "Core Rulebook"

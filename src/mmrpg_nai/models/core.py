@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +259,53 @@ class User(BaseModel):
 # ---------------------------------------------------------------------------
 
 class LLMConfig(BaseModel):
+    @staticmethod
+    def _default_provider_settings() -> dict[str, "LLMProviderSettings"]:
+        return {
+            "google_ai_studio": LLMProviderSettings(
+                model="gemini-2.5-flash",
+                api_base="https://generativelanguage.googleapis.com/v1beta/openai",
+                api_key_env="GOOGLE_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "openai": LLMProviderSettings(
+                model="gpt-4o",
+                api_base="https://api.openai.com/v1",
+                api_key_env="OPENAI_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "grok": LLMProviderSettings(
+                model="grok-4",
+                api_base="https://api.x.ai/v1",
+                api_key_env="XAI_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "github_copilot": LLMProviderSettings(
+                model="gpt-5.4",
+                api_base="https://api.githubcopilot.com",
+                api_key_env="GITHUB_TOKEN",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "ollama": LLMProviderSettings(
+                model="llama3.1",
+                api_base="http://localhost:11434/v1",
+                api_key_env="OLLAMA_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "openwebui": LLMProviderSettings(
+                model="llama3.1",
+                api_base="http://localhost:3000/ollama/v1",
+                api_key_env="OPENWEBUI_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+        }
+
     provider: str = "github_copilot"
     # Model name as listed on https://github.com/marketplace/models
     # Change with: mmrpg-nai config set llm.model <name>
@@ -267,50 +314,14 @@ class LLMConfig(BaseModel):
     api_key_env: str = "GITHUB_TOKEN"
     max_tokens: int = 4096
     temperature: float = 0.8
-    provider_settings: dict[str, "LLMProviderSettings"] = Field(default_factory=lambda: {
-        "google_ai_studio": LLMProviderSettings(
-            model="gemini-2.5-flash",
-            api_base="https://generativelanguage.googleapis.com/v1beta/openai",
-            api_key_env="GOOGLE_API_KEY",
-            max_tokens=4096,
-            temperature=0.8,
-        ),
-        "openai": LLMProviderSettings(
-            model="gpt-4o",
-            api_base="https://api.openai.com/v1",
-            api_key_env="OPENAI_API_KEY",
-            max_tokens=4096,
-            temperature=0.8,
-        ),
-        "grok": LLMProviderSettings(
-            model="grok-4",
-            api_base="https://api.x.ai/v1",
-            api_key_env="XAI_API_KEY",
-            max_tokens=4096,
-            temperature=0.8,
-        ),
-        "github_copilot": LLMProviderSettings(
-            model="gpt-5.4",
-            api_base="https://api.githubcopilot.com",
-            api_key_env="GITHUB_TOKEN",
-            max_tokens=4096,
-            temperature=0.8,
-        ),
-        "ollama": LLMProviderSettings(
-            model="llama3.1",
-            api_base="http://localhost:11434/v1",
-            api_key_env="OLLAMA_API_KEY",
-            max_tokens=4096,
-            temperature=0.8,
-        ),
-        "openwebui": LLMProviderSettings(
-            model="llama3.1",
-            api_base="http://localhost:3000/ollama/v1",
-            api_key_env="OPENWEBUI_API_KEY",
-            max_tokens=4096,
-            temperature=0.8,
-        ),
-    })
+    provider_settings: dict[str, "LLMProviderSettings"] = Field(default_factory=_default_provider_settings)
+
+    @model_validator(mode="after")
+    def _backfill_provider_settings(self) -> "LLMConfig":
+        defaults = self._default_provider_settings()
+        merged = {**defaults, **self.provider_settings}
+        self.provider_settings = merged
+        return self
 
     def detect_provider(self, env: Mapping[str, str] | None = None) -> str | None:
         env_map = env or os.environ

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -70,3 +71,31 @@ def test_provider_model_updates_selected_provider_model(data_dir):
     assert cfg.llm.provider == "openai"
     assert cfg.llm.provider_settings["openai"].model == "gpt-4.1"
     assert cfg.llm.model == "gpt-4.1"
+
+
+def test_provider_list_backfills_new_providers_for_legacy_config(tmp_path: Path):
+    legacy = {
+        "llm": {
+            "provider": "github_copilot",
+            "model": "gpt-5.4",
+            "api_base": "https://api.githubcopilot.com",
+            "api_key_env": "GITHUB_TOKEN",
+            "max_tokens": 4096,
+            "temperature": 0.8,
+            "provider_settings": {
+                "openai": {
+                    "model": "gpt-4o",
+                    "api_base": "https://api.openai.com/v1",
+                    "api_key_env": "OPENAI_API_KEY",
+                    "max_tokens": 4096,
+                    "temperature": 0.8,
+                }
+            },
+        },
+        "data_dir": str(tmp_path),
+    }
+    (tmp_path / "config.json").write_text(json.dumps(legacy), encoding="utf-8")
+    result = runner.invoke(app, ["config", "provider", "list", "--data-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "openwebui" in result.output
+    assert "grok" in result.output
