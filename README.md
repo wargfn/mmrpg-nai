@@ -353,6 +353,9 @@ mmrpg-nai session run --session-id <session-id>
 mmrpg-nai session run --no-stream
 ```
 
+When choosing participants, you can type `new` to create a player character immediately,
+or `unnamed` to create a placeholder player character for the session.
+
 **During a session:**
 
 | Input | Effect |

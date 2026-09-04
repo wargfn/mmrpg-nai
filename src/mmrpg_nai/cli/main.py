@@ -160,9 +160,27 @@ def _create_user_for_session(store: Store) -> User:
     return user
 
 
-def _create_character_for_session(store: Store) -> Character:
+def _create_unnamed_character_for_session(store: Store) -> Character:
+    existing = {c.name for c in store.characters.list_all()}
+    base = "Unnamed Character"
+    name = base
+    idx = 2
+    while name in existing:
+        name = f"{base} {idx}"
+        idx += 1
+    character = Character(name=name, alias="", background="", is_npc=False)
+    store.characters.save(character)
+    console.print(f"[green]Created character: {character.name} ({character.id[:8]})[/green]")
+    return character
+
+
+def _create_character_for_session(store: Store, allow_unnamed: bool = False) -> Character:
     name = Prompt.ask("Character name").strip()
     while not name:
+        if allow_unnamed:
+            use_unnamed = Prompt.ask("Use unnamed character? [Y/n]", default="y").strip().lower()
+            if use_unnamed in {"", "y", "yes"}:
+                return _create_unnamed_character_for_session(store)
         console.print("[red]Character name is required.[/red]")
         name = Prompt.ask("Character name").strip()
     alias = Prompt.ask("Alias", default="").strip()
@@ -989,7 +1007,9 @@ def session_run(
             for i, ch in enumerate(pc_pool, 1):
                 ctable.add_row(str(i), ch.id[:8], ch.name, ch.alias, ch.rank.value)
             console.print(ctable)
-            console.print("[dim]Enter character numbers separated by commas (e.g. 1,3) or press Enter to use all.[/dim]")
+            console.print(
+                "[dim]Enter numbers/IDs (e.g. 1,3), 'new' to create, 'unnamed' for a placeholder, or Enter for all.[/dim]"
+            )
             raw_chars = Prompt.ask("Characters playing today", default="all")
             if raw_chars.strip().lower() in {"", "all"}:
                 party = pc_pool
@@ -997,6 +1017,13 @@ def session_run(
                 selected: list[Character] = []
                 for token in raw_chars.split(","):
                     token = token.strip()
+                    lowered = token.lower()
+                    if lowered in {"new", "create"}:
+                        selected.append(_create_character_for_session(store, allow_unnamed=True))
+                        continue
+                    if lowered in {"unnamed", "anon", "anonymous"}:
+                        selected.append(_create_unnamed_character_for_session(store))
+                        continue
                     if token.isdigit():
                         idx = int(token) - 1
                         if 0 <= idx < len(pc_pool):
@@ -1004,17 +1031,21 @@ def session_run(
                     else:
                         matched = [c for c in pc_pool if c.id.startswith(token) or c.name.lower() == token.lower()]
                         selected.extend(matched)
-                party = selected or pc_pool
+                dedup: dict[str, Character] = {}
+                for c in selected:
+                    dedup[c.id] = c
+                party = list(dedup.values()) or pc_pool
         else:
             console.print("[yellow]No player characters found.[/yellow]")
             create_char = Prompt.ask("Create a new player character now? [Y/n]", default="y").strip().lower()
             if create_char in {"", "y", "yes"}:
-                created_character = _create_character_for_session(store)
+                created_character = _create_character_for_session(store, allow_unnamed=True)
                 party = [created_character]
-                if created_character.id not in campaign.character_ids:
-                    campaign.character_ids.append(created_character.id)
 
         session_users = _select_users_for_session(store, campaign)
+        for character in party:
+            if character.id not in campaign.character_ids:
+                campaign.character_ids.append(character.id)
 
         # ------------------------------------------------------------------
         # 3. Create a new session for this run
