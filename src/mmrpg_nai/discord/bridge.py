@@ -101,6 +101,43 @@ class MCPWebClient:
         data = self._get(f"/web/session/{session_id}")
         return data if isinstance(data, dict) else {}
 
+    def list_active_sessions(self) -> list[dict[str, Any]]:
+        data = self._get("/web/active-sessions")
+        sessions = data.get("sessions", []) if isinstance(data, dict) else []
+        return sessions if isinstance(sessions, list) else []
+
+    def list_sessions(self) -> list[dict[str, Any]]:
+        data = self._get("/web/bootstrap")
+        sessions = data.get("sessions", []) if isinstance(data, dict) else []
+        return sessions if isinstance(sessions, list) else []
+
+    def resolve_session_id(self, session_ref: str) -> str:
+        def _match(ref: str, sessions: list[dict[str, Any]]) -> tuple[str | None, bool]:
+            exact = [s for s in sessions if str(s.get("id", "")).strip() == ref]
+            if len(exact) == 1:
+                return str(exact[0].get("id", "")).strip(), False
+            prefix = [s for s in sessions if str(s.get("id", "")).strip().startswith(ref)]
+            if len(prefix) == 1:
+                return str(prefix[0].get("id", "")).strip(), False
+            if len(prefix) > 1:
+                return None, True
+            return None, False
+
+        ref = session_ref.strip()
+        active_match, active_ambiguous = _match(ref, self.list_active_sessions())
+        if active_ambiguous:
+            raise MCPBridgeError("Session prefix matches multiple active sessions; be more specific.")
+        if active_match:
+            return active_match
+
+        all_match, all_ambiguous = _match(ref, self.list_sessions())
+        if all_ambiguous:
+            raise MCPBridgeError("Session prefix matches multiple sessions; be more specific.")
+        if all_match:
+            return all_match
+
+        raise MCPBridgeError("Session not found. Use /session list to view active sessions.")
+
     def ensure_active_session(self, session_id: str, resume_if_inactive: bool = True) -> tuple[str, bool]:
         state = self.get_session_state(session_id)
         session = state.get("session") or {}
@@ -121,8 +158,7 @@ class MCPWebClient:
         return resumed_id, True
 
     def is_session_listed_active(self, session_id: str) -> bool:
-        data = self._get("/web/active-sessions")
-        sessions = data.get("sessions", []) if isinstance(data, dict) else []
+        sessions = self.list_active_sessions()
         for item in sessions:
             if str(item.get("id", "")).strip() == session_id:
                 return True
@@ -199,7 +235,8 @@ def process_bridge_command(
                 "• /campaign list\n"
                 "• /campaign new <name>\n"
                 "• /session start [campaign-id-or-prefix] [title]\n"
-                "• /session use <session-id>\n"
+                "• /session list\n"
+                "• /session use <session-id-or-prefix>\n"
                 "• /session status"
             ),
             active_session_id,
@@ -240,17 +277,34 @@ def process_bridge_command(
 
     if cmd == "session":
         if len(parts) < 2:
-            return True, "Usage: /session start|use|status ...", active_session_id, last_campaign_id
+            return True, "Usage: /session list|start|use|status ...", active_session_id, last_campaign_id
         action = parts[1].lower()
+        if action == "list":
+            sessions = mcp.list_active_sessions()
+            if not sessions:
+                return True, "No active sessions found.", active_session_id, last_campaign_id
+            lines: list[str] = ["Active sessions:"]
+            for s in sessions[:20]:
+                sid = str(s.get("id", "")).strip()
+                cid = str(s.get("campaign_id", "")).strip()
+                title = str(s.get("title", "")).strip()
+                marker = " (current)" if active_session_id and sid == active_session_id else ""
+                lines.append(f"• {sid}  {cid[:8]}  {title}{marker}".rstrip())
+            if len(sessions) > 20:
+                lines.append(f"…and {len(sessions) - 20} more")
+            return True, "\n".join(lines), active_session_id, last_campaign_id
         if action == "status":
             sid = active_session_id or "none"
             cid = last_campaign_id or "none"
             return True, f"Active session: {sid}\nLast campaign: {cid}", active_session_id, last_campaign_id
         if action == "use":
             if len(parts) < 3 or not parts[2].strip():
-                return True, "Usage: /session use <session-id>", active_session_id, last_campaign_id
-            session_id = parts[2].strip()
-            state = mcp.get_session_state(session_id)
+                return True, "Usage: /session use <session-id-or-prefix>", active_session_id, last_campaign_id
+            try:
+                session_id = mcp.resolve_session_id(parts[2].strip())
+                state = mcp.get_session_state(session_id)
+            except MCPBridgeError as exc:
+                return True, str(exc), active_session_id, last_campaign_id
             session = state.get("session") or {}
             canonical_session_id = str(session.get("id", "")).strip() or session_id
             campaign = state.get("campaign") or {}

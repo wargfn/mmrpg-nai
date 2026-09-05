@@ -260,6 +260,8 @@ def test_process_bridge_command_session_use_validates_session_state():
     client = MCPWebClient("http://localhost:8000")
 
     def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": [{"id": "sess-1"}]})
         if req.full_url.endswith("/web/session/sess-1"):
             return _FakeHTTPResponse(
                 {
@@ -277,6 +279,77 @@ def test_process_bridge_command_session_use_validates_session_state():
     assert "Active session set to session-canonical-1 (active)" in (reply or "")
     assert active == "session-canonical-1"
     assert campaign == "camp-1"
+
+
+def test_process_bridge_command_session_use_resolves_prefix():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse(
+                {"sessions": [{"id": "session-canonical-1", "campaign_id": "camp-1", "title": "Alpha"}]}
+            )
+        if req.full_url.endswith("/web/session/session-canonical-1"):
+            return _FakeHTTPResponse(
+                {
+                    "is_active": True,
+                    "session": {"id": "session-canonical-1"},
+                    "campaign": {"id": "camp-1"},
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session use session-can", client, None, None)
+
+    assert handled is True
+    assert "Active session set to session-canonical-1 (active)" in (reply or "")
+    assert active == "session-canonical-1"
+    assert campaign == "camp-1"
+
+
+def test_process_bridge_command_session_use_rejects_ambiguous_prefix():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": [{"id": "session-aaa"}, {"id": "session-aab"}]})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session use session-aa", client, None, None)
+
+    assert handled is True
+    assert "matches multiple active sessions" in (reply or "")
+    assert active is None
+    assert campaign is None
+
+
+def test_process_bridge_command_session_list():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse(
+                {
+                    "sessions": [
+                        {"id": "session-aaa", "campaign_id": "camp-1", "title": "Alpha"},
+                        {"id": "session-bbb", "campaign_id": "camp-2", "title": "Beta"},
+                    ]
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session list", client, "session-bbb", "camp-2")
+
+    assert handled is True
+    assert "Active sessions:" in (reply or "")
+    assert "session-aaa" in (reply or "")
+    assert "session-bbb" in (reply or "")
+    assert "(current)" in (reply or "")
+    assert active == "session-bbb"
+    assert campaign == "camp-2"
 
 
 def test_process_bridge_command_campaign_list():
