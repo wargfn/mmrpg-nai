@@ -1463,6 +1463,8 @@ def session_attach(
         raise typer.Exit(1)
 
     selected_id = str(selected.get("id", ""))
+    resumed_recap = ""
+    resumed_start_prompt = ""
     try:
         state = _mcp_get_json(mcp_base_url, f"/web/session/{selected_id}")
         state_session = state.get("session") or {}
@@ -1479,6 +1481,8 @@ def session_attach(
             resumed_session = resumed.get("session") or {}
             if isinstance(resumed_session, dict):
                 selected = {**selected, **resumed_session}
+            resumed_recap = str(resumed.get("recap", "")).strip()
+            resumed_start_prompt = str(resumed.get("start_prompt", "")).strip()
             resumed_campaign = resumed.get("campaign") or {}
             if isinstance(resumed_campaign, dict):
                 resumed_campaign_id = str(resumed_campaign.get("id", "")).strip()
@@ -1502,6 +1506,10 @@ def session_attach(
             title="🔗 Attached to Active Session",
         )
     )
+    if resumed_recap:
+        console.print(Panel(Markdown(resumed_recap), title="[bold yellow]Previously…[/bold yellow]"))
+    if resumed_start_prompt:
+        console.print(Panel(Markdown(resumed_start_prompt), title="[bold cyan]Start Here[/bold cyan]"))
 
     while True:
         try:

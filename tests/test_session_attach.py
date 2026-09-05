@@ -105,7 +105,9 @@ def test_session_attach_can_resume_inactive_session_by_id():
                         "campaign_id": "campaign-1",
                         "title": "Session 2",
                         "user_ids": [],
-                    }
+                    },
+                    "recap": "Previously on MMRPG...",
+                    "start_prompt": "Begin at the ruins with alarms blaring.",
                 }
             )
         if req.full_url.endswith(f"/web/session/{resumed_session_id}/chat"):
@@ -118,6 +120,8 @@ def test_session_attach_can_resume_inactive_session_by_id():
 
     assert result.exit_code == 0, result.output
     assert "Narrated: hello" in result.output
+    assert "Previously on MMRPG..." in result.output
+    assert "Begin at the ruins with alarms blaring." in result.output
 
 
 def test_session_attach_errors_when_state_active_but_not_listed():
