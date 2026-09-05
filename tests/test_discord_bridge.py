@@ -90,6 +90,8 @@ def test_mcp_client_ensure_active_session_already_active():
     def _urlopen(req, timeout=15):
         if req.full_url.endswith("/web/session/sid"):
             return _FakeHTTPResponse({"is_active": True})
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": [{"id": "sid"}]})
         raise AssertionError(f"Unexpected URL: {req.full_url}")
 
     with patch("urllib.request.urlopen", side_effect=_urlopen):
@@ -105,15 +107,38 @@ def test_mcp_client_ensure_active_session_resumes_when_inactive():
     def _urlopen(req, timeout=15):
         if req.full_url.endswith("/web/session/sid") and req.method == "GET":
             return _FakeHTTPResponse({"is_active": False})
+        if req.full_url.endswith("/web/active-sessions"):
+            if not seen_resume["done"]:
+                return _FakeHTTPResponse({"sessions": []})
+            return _FakeHTTPResponse({"sessions": [{"id": "sid-2"}]})
         if req.full_url.endswith("/web/session/start"):
+            seen_resume["done"] = True
             return _FakeHTTPResponse({"session": {"id": "sid-2"}})
         raise AssertionError(f"Unexpected URL: {req.full_url}")
 
+    seen_resume = {"done": False}
     with patch("urllib.request.urlopen", side_effect=_urlopen):
         sid, resumed = client.ensure_active_session("sid", resume_if_inactive=True)
 
     assert sid == "sid-2"
     assert resumed is True
+
+
+def test_mcp_client_ensure_active_session_raises_when_not_listed_after_resume():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/sid") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": True})
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": []})
+        if req.full_url.endswith("/web/session/start"):
+            return _FakeHTTPResponse({"session": {"id": "sid-2"}})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        with pytest.raises(MCPBridgeError, match="could not be confirmed"):
+            client.ensure_active_session("sid", resume_if_inactive=True)
 
 
 def test_mcp_client_create_campaign_and_start_session():

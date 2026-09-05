@@ -103,11 +103,26 @@ class MCPWebClient:
 
     def ensure_active_session(self, session_id: str, resume_if_inactive: bool = True) -> tuple[str, bool]:
         state = self.get_session_state(session_id)
-        if bool(state.get("is_active")):
+        is_active = bool(state.get("is_active"))
+        listed = self.is_session_listed_active(session_id)
+        if is_active and listed:
             return session_id, False
         if not resume_if_inactive:
+            if not listed:
+                raise MCPBridgeError("Session is not listed as active in MCP web active sessions.")
             return session_id, False
-        return self.resume(session_id), True
+        resumed_id = self.resume(session_id)
+        if not self.is_session_listed_active(resumed_id):
+            raise MCPBridgeError("Session could not be confirmed in MCP web active sessions after resume.")
+        return resumed_id, True
+
+    def is_session_listed_active(self, session_id: str) -> bool:
+        data = self._get("/web/active-sessions")
+        sessions = data.get("sessions", []) if isinstance(data, dict) else []
+        for item in sessions:
+            if str(item.get("id", "")).strip() == session_id:
+                return True
+        return False
 
 
 def split_discord_message(text: str, limit: int = 1800) -> list[str]:
