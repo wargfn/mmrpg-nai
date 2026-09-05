@@ -38,7 +38,7 @@ app = FastAPI(
         "Provides REST access to campaigns, sessions, characters, equipment, "
         "power sets, adventures, and source materials."
     ),
-    version="0.1.0",
+    version="0.1.5",
 )
 
 _store: Store | None = None
@@ -70,6 +70,7 @@ class WebSessionStartResponse(BaseModel):
     participants: list[WebParticipant]
     users: list[User] = Field(default_factory=list)
     recap: str = ""
+    start_prompt: str = ""
 
 
 class WebChatRequest(BaseModel):
@@ -100,6 +101,13 @@ class WebSessionStateResponse(BaseModel):
     participants: list[WebParticipant]
     users: list[User]
     is_active: bool
+
+
+class WebSessionEndResponse(BaseModel):
+    ended: bool
+    summary: str = ""
+    start_prompt: str = ""
+    campaign_progress: str = ""
 
 
 class UserWriteRequest(BaseModel):
@@ -160,7 +168,7 @@ def _start_narrator(
     session: Session,
     campaign: Campaign,
     participants: list[Character],
-) -> tuple[Narrator, str]:
+) -> tuple[Narrator, str, str]:
     narrator = Narrator(cfg, store)
     narrator.start_session(
         session,
@@ -173,17 +181,19 @@ def _start_narrator(
         _session_locks.setdefault(session.id, Lock())
 
     recap = ""
+    start_prompt = ""
     previous_sessions = sorted(
         store.sessions.find(campaign_id=campaign.id),
         key=lambda s: (s.session_number, s.started_at),
     )
     previous = next((s for s in reversed(previous_sessions) if s.id != session.id), None)
     if previous:
+        start_prompt = (previous.start_prompt or "").strip()
         try:
             recap = narrator.recap_last_session(previous)
         except Exception:
             recap = ""
-    return narrator, recap
+    return narrator, recap, start_prompt
 
 
 def _as_web_participants(participants: list[Character]) -> list[WebParticipant]:
@@ -266,7 +276,7 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
             store.campaigns.save(campaign)
         lock = _get_session_lock(session.id)
         with lock:
-            _, recap = _start_narrator(store, cfg, session, campaign, participants)
+            _, recap, start_prompt = _start_narrator(store, cfg, session, campaign, participants)
     else:
         if not req.campaign_id:
             raise HTTPException(status_code=400, detail="campaign_id is required when starting a new session")
@@ -294,7 +304,7 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
                 if uid not in campaign.user_ids:
                     campaign.user_ids.append(uid)
             store.campaigns.save(campaign)
-        _, recap = _start_narrator(store, cfg, session, campaign, participants)
+        _, recap, start_prompt = _start_narrator(store, cfg, session, campaign, participants)
     store.touch_users_for_session(session.user_ids)
     return WebSessionStartResponse(
         session=session,
@@ -302,6 +312,7 @@ def web_session_start(req: WebSessionStartRequest) -> WebSessionStartResponse:
         participants=_as_web_participants(participants),
         users=users,
         recap=recap,
+        start_prompt=start_prompt,
     )
 
 
@@ -357,13 +368,51 @@ def web_session_chat(session_id: str, req: WebChatRequest) -> WebChatResponse:
     return WebChatResponse(session_id=session_id, response=response, mode=mode, log=session.log)
 
 
-@app.post("/web/session/{session_id}/end", tags=["web"])
-def web_session_end(session_id: str) -> dict[str, bool]:
+@app.post("/web/session/{session_id}/end", response_model=WebSessionEndResponse, tags=["web"])
+def web_session_end(session_id: str) -> WebSessionEndResponse:
+    store = get_store()
+    summary = ""
+    start_prompt = ""
+    campaign_progress = ""
     lock = _get_session_lock(session_id)
     with lock:
         with _active_narrators_lock:
-            ended = _active_narrators.pop(session_id, None) is not None
-    return {"ended": ended}
+            narrator = _active_narrators.pop(session_id, None)
+            ended = narrator is not None
+    if not ended:
+        return WebSessionEndResponse(ended=False)
+
+    session = store.sessions.load(session_id)
+    if session is None:
+        return WebSessionEndResponse(ended=True)
+    campaign = store.campaigns.load(session.campaign_id)
+
+    session.ended_at = datetime.now(timezone.utc)
+    if narrator is not None and campaign is not None:
+        try:
+            summary, start_prompt = narrator.summarise_session_close(session, campaign)
+        except Exception:
+            summary, start_prompt = "", ""
+
+    session.synopsis = summary
+    session.start_prompt = start_prompt
+    store.sessions.save(session)
+    if narrator is not None and campaign is not None:
+        try:
+            completed_sessions = [s for s in store.sessions.find(campaign_id=campaign.id) if s.ended_at is not None]
+            progress_update = narrator.summarise_campaign_progress(campaign, completed_sessions).strip()
+            if progress_update:
+                campaign_progress = progress_update
+                campaign.campaign_progress = progress_update
+                store.campaigns.save(campaign)
+        except Exception:
+            campaign_progress = ""
+    return WebSessionEndResponse(
+        ended=True,
+        summary=summary,
+        start_prompt=start_prompt,
+        campaign_progress=campaign_progress,
+    )
 
 
 # ---------------------------------------------------------------------------

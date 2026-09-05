@@ -133,7 +133,10 @@ class Store:
     def load_config(self) -> NarratorConfig:
         p = self._base / "config.json"
         if p.exists():
-            return NarratorConfig.model_validate_json(p.read_text(encoding="utf-8"))
+            try:
+                return NarratorConfig.model_validate_json(p.read_text(encoding="utf-8"))
+            except Exception as exc:
+                logger.warning("Invalid config file %s; using defaults: %s", p, exc)
         return NarratorConfig()
 
     def save_config(self, cfg: NarratorConfig) -> NarratorConfig:

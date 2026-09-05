@@ -4,7 +4,7 @@ Marvel Multiverse Role-Playing Game Narrator AI Tools
 ## Overview
 
 `mmrpg-nai` is an AI-powered Narrator assistant for the **Marvel Multiverse Role-Playing Game (MMRPG)**.  
-It uses the **GitHub Copilot GPT-5.4** language model (configurable) to help you plan campaigns, run interactive sessions, manage characters and equipment, import adventures, and more — all from your terminal.
+It supports **Google AI Studio**, **OpenAI**, **xAI Grok**, **GitHub Copilot**, and **OpenWebUI/Ollama** (OpenAI-compatible endpoints) to help you plan campaigns, run interactive sessions, manage characters and equipment, import adventures, and more — all from your terminal.
 
 ## Features
 
@@ -28,7 +28,13 @@ It uses the **GitHub Copilot GPT-5.4** language model (configurable) to help you
 ## Requirements
 
 - Python 3.11+
-- A **GitHub personal access token** with the `models` permission
+- One of:
+  - `GOOGLE_API_KEY` (Google AI Studio)
+  - `OPENAI_API_KEY` (OpenAI)
+  - `XAI_API_KEY` (xAI Grok)
+  - `GITHUB_TOKEN` with `models` permission (GitHub Copilot)
+  - `OLLAMA_API_KEY` (optional for OpenWebUI/Ollama)
+  - `OPENWEBUI_API_KEY` (OpenWebUI)
 - Optional: `pymupdf` for PDF ingestion (included in requirements)
 
 ## Installation
@@ -45,9 +51,24 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
-# Edit .env and set GITHUB_TOKEN
+# Edit .env and set the token env var for your selected provider profile
+# (defaults: GOOGLE_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GITHUB_TOKEN, OPENWEBUI_API_KEY, OLLAMA_API_KEY)
 export $(grep -v '^#' .env | xargs)
 ```
+
+Provider selection precedence:
+1. If your selected provider (`config provider select`) has its configured token env var set, that selected provider is used.
+2. If top-level `llm.api_key_env` is set to a custom env var that is not one of the provider profile env vars, auto-detection is skipped and the selected provider remains in effect.
+3. Otherwise, provider auto-detection checks each provider profile's configured `llm.provider_settings.<provider>.api_key_env` in this order:
+   1. `google_ai_studio`
+   2. `openai`
+   3. `grok`
+   4. `github_copilot`
+   5. `ollama`
+   6. `openwebui`
+
+The active provider uses its own model/base URL/token-env settings from `llm.provider_settings`.  
+When `llm.api_key_env` is one of the managed provider env vars, top-level `llm.model`, `llm.api_base`, `llm.api_key_env`, `llm.max_tokens`, and `llm.temperature` are reconciled back to the selected provider profile values.
 
 ## Quick Start
 
@@ -76,7 +97,7 @@ mmrpg-nai session log <session-id>
 ## CLI Reference
 
 ```
-mmrpg-nai [--help]
+mmrpg-nai [--help] [--version]
 
 Commands:
   config     Manage narrator configuration
@@ -88,6 +109,7 @@ Commands:
   adventure  Manage adventure templates
   pdf        Manage PDF source materials
   serve      Start the MCP REST service
+  serve-discord  Start Discord bridge process for MCP sessions
 ```
 
 All commands accept `--data-dir <path>` (or env var `MMRPG_DATA_DIR`) to point at a
@@ -106,11 +128,13 @@ mmrpg-nai config show
 #### `config set <key> <value>`
 Set any configuration value using dot-notation.
 ```bash
-# LLM settings
-mmrpg-nai config set llm.model gpt-4o
-mmrpg-nai config set llm.temperature 0.9
-mmrpg-nai config set llm.max_tokens 8192
-mmrpg-nai config set llm.api_base https://api.githubcopilot.com
+# LLM settings for a specific provider profile
+mmrpg-nai config set llm.provider_settings.openai.model gpt-4o
+mmrpg-nai config set llm.provider_settings.github_copilot.model gpt-5.4
+mmrpg-nai config set llm.provider_settings.ollama.api_base http://localhost:11434/v1
+mmrpg-nai config set llm.provider_settings.openwebui.api_base http://localhost:3000/ollama/v1
+mmrpg-nai config set llm.provider_settings.google_ai_studio.model gemini-2.5-flash
+mmrpg-nai config set llm.provider_settings.grok.model grok-4
 
 # Narrator settings
 mmrpg-nai config set max_source_chars 40000   # max PDF text injected per session (0 = disabled)
@@ -127,7 +151,7 @@ mmrpg-nai config system-prompt --prompt-file my_prompt.txt
 ```
 
 #### `config models`
-Query the GitHub Copilot API endpoint and print a table of all available model IDs.
+Query the detected provider endpoint and print a table of available model IDs.
 The currently active model is highlighted with ✓.
 ```bash
 # List all models
@@ -136,6 +160,41 @@ mmrpg-nai config models
 # Filter results (case-insensitive substring match)
 mmrpg-nai config models --filter gpt
 mmrpg-nai config models -f llama
+```
+
+#### `config provider list`
+List all provider profiles and whether they are selected/detected.
+```bash
+mmrpg-nai config provider list
+```
+
+#### `config provider show [provider]`
+Show details for the selected provider or a specific provider.
+```bash
+mmrpg-nai config provider show
+mmrpg-nai config provider show google_ai_studio
+```
+
+#### `config provider select <provider>`
+Select the default provider profile.
+```bash
+mmrpg-nai config provider select openai
+mmrpg-nai config provider select google_ai_studio
+```
+
+#### `config provider model <model-id>`
+Set the model for the currently selected provider.
+```bash
+mmrpg-nai config provider select openai
+mmrpg-nai config provider model gpt-4.1
+```
+
+To tune other settings on a specific provider profile, update these paths:
+```bash
+mmrpg-nai config set llm.provider_settings.<provider>.api_base <url>
+mmrpg-nai config set llm.provider_settings.<provider>.api_key_env <env-var-name>
+mmrpg-nai config set llm.provider_settings.<provider>.temperature <float>
+mmrpg-nai config set llm.provider_settings.<provider>.max_tokens <int>
 ```
 
 ---
@@ -287,8 +346,9 @@ mmrpg-nai session remove-user <session-id> <user-id>
 ```
 
 #### `session run`
-Start an interactive narration session. Prompts you to pick a campaign and characters,
-then generates an AI recap of the previous session before play begins.
+Start an interactive narration session. Prompts you to pick a campaign, characters,
+and players/users, then generates an AI recap of the previous session before play begins.
+If no player characters or users exist yet, it can create them during startup.
 
 At **session startup**, if the campaign has a plan and/or progress summary, they are
 automatically injected into the Narrator's system prompt so the AI knows exactly where
@@ -309,6 +369,9 @@ mmrpg-nai session run --session-id <session-id>
 mmrpg-nai session run --no-stream
 ```
 
+When choosing participants, you can type `new` to create a player character immediately,
+or `unnamed` to create a placeholder player character for the session.
+
 **During a session:**
 
 | Input | Effect |
@@ -323,6 +386,25 @@ mmrpg-nai session run --no-stream
 [skip ahead to the confrontation with Red Skull]
 [add a surprise twist — one of the NPCs is a Skrull]
 [tone down the violence — there are kids watching]
+```
+
+#### `session query <question>`
+Ask the configured LLM a rules/stats/checks question using loaded campaign/session context.
+You must provide either `--campaign-id` or `--session-id`.
+```bash
+mmrpg-nai session query "How do melee checks work?" --campaign-id <campaign-id>
+mmrpg-nai session query "How much focus does this character have?" --session-id <session-id>
+```
+
+#### `session attach`
+Attach the CLI to an active MCP web session so this terminal can participate in the same live session.
+Use this with a separately running `mmrpg-nai serve` process.
+```bash
+# Attach by session id/prefix (active or resumable)
+mmrpg-nai session attach --session-id <session-id>
+
+# Or choose interactively from active sessions
+mmrpg-nai session attach
 ```
 
 #### `session log <session-id>`
@@ -599,16 +681,67 @@ mmrpg-nai serve
 
 # Custom host/port
 mmrpg-nai serve --host 0.0.0.0 --port 9000
+
+# Run as background service
+mmrpg-nai serve --background
 ```
 
 | Option | Default | Description |
 |---|---|---|
 | `--host` | `127.0.0.1` | Bind host |
 | `--port` | `8000` | Bind port |
+| `--background/--foreground` | foreground mode | Run as a detached background process |
 
 **API docs:** `http://127.0.0.1:8000/docs` (Swagger UI)
 
 **Web front end:** `http://127.0.0.1:8000/`
+
+### `mmrpg-nai serve-discord` — Discord bridge process
+
+Run a standalone Discord bot process that listens to one Discord channel, forwards messages
+to an MCP session, and posts Narrator responses back into the same channel.
+
+```bash
+# 1) Start MCP server
+mmrpg-nai serve
+
+# 2) In another process/shell, start Discord bridge
+export DISCORD_BOT_TOKEN=...
+mmrpg-nai serve-discord --channel-id <discord-channel-id>
+
+# Optional: pre-bind to an existing session
+mmrpg-nai serve-discord --session-id <session-id> --channel-id <discord-channel-id>
+```
+
+If the session is no longer active in MCP memory, the bridge can auto-resume it (default enabled)
+by creating a follow-up active session via `/web/session/start`.
+When `--session-id` is provided, this active-session check/resume also runs at bridge startup so
+the session appears under active sessions in the web interface immediately.
+
+If no session is set, control the bridge from Discord with commands:
+- `/campaign list`
+- `/campaign new <name>`
+- `/session start [campaign-id-or-prefix] [title]`
+- `/session list`
+- `/session use <session-id-or-prefix>`
+- `/session end`
+- `/session status`
+- `/help`
+
+The bridge also accepts CLI-style prefixed commands like `/mmrpg-nai campaign list`.
+Using `/session use <session-id-or-prefix>` validates and selects matching sessions (including those started in the web UI).
+If you select an inactive session, it is set as active target and will resume automatically on the next message when resume mode is enabled.
+Session attach/start from Discord now also verifies the session is present in MCP web active sessions.
+
+| Option | Default | Description |
+|---|---|---|
+| `--session-id` | optional | Active or resumable session ID |
+| `--channel-id` | required | Discord channel ID to consume and post messages |
+| `--mcp-base-url` | `http://127.0.0.1:8000` | MCP REST base URL |
+| `--mcp-timeout-seconds` | `120` | MCP request timeout for bridge chat/commands |
+| `--token-env` | `DISCORD_BOT_TOKEN` | Env var with Discord bot token |
+| `--resume-if-inactive/--no-resume-if-inactive` | enabled | Auto-resume session when inactive |
+| `--command-prefix` | empty | Optional prefix filter (e.g. `!nai`) |
 
 **Available endpoints:**
 

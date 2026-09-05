@@ -10,6 +10,7 @@ from mmrpg_nai.models.core import (
     Equipment,
     EquipmentType,
     LogEntry,
+    LLMConfig,
     NarratorConfig,
     Power,
     PowerSet,
@@ -72,6 +73,122 @@ def test_narrator_config_defaults():
     cfg = NarratorConfig()
     assert cfg.llm.model == "gpt-5.4"
     assert "Narrator" in cfg.system_prompt
+
+
+def test_llm_config_detects_openai_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"OPENAI_API_KEY": "sk-test"})
+    assert resolved.provider == "openai"
+    assert resolved.api_key_env == "OPENAI_API_KEY"
+
+
+def test_llm_config_detects_google_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"GOOGLE_API_KEY": "AIza-test"})
+    assert resolved.provider == "google_ai_studio"
+    assert resolved.api_key_env == "GOOGLE_API_KEY"
+
+
+def test_llm_config_detects_github_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"GITHUB_TOKEN": "ghp_test"})
+    assert resolved.provider == "github_copilot"
+    assert resolved.api_key_env == "GITHUB_TOKEN"
+
+
+def test_llm_config_detects_ollama_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"OLLAMA_API_KEY": "ollama_test"})
+    assert resolved.provider == "ollama"
+    assert resolved.api_key_env == "OLLAMA_API_KEY"
+
+
+def test_llm_config_detects_grok_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"XAI_API_KEY": "xai-test"})
+    assert resolved.provider == "grok"
+    assert resolved.api_key_env == "XAI_API_KEY"
+
+
+def test_llm_config_detects_openwebui_provider():
+    cfg = LLMConfig()
+    resolved = cfg.resolved({"OPENWEBUI_API_KEY": "owui-test"})
+    assert resolved.provider == "openwebui"
+    assert resolved.api_key_env == "OPENWEBUI_API_KEY"
+
+
+def test_llm_config_uses_selected_provider_without_detected_env():
+    cfg = LLMConfig(provider="openai")
+    resolved = cfg.resolved({})
+    assert resolved.provider == "openai"
+    assert resolved.api_key_env == "OPENAI_API_KEY"
+
+
+def test_llm_config_backfills_missing_provider_settings():
+    cfg = LLMConfig.model_validate(
+        {
+            "provider": "github_copilot",
+            "provider_settings": {
+                "openai": {
+                    "model": "custom-openai",
+                    "api_base": "https://api.openai.com/v1",
+                    "api_key_env": "OPENAI_API_KEY",
+                    "max_tokens": 4096,
+                    "temperature": 0.8,
+                }
+            },
+        }
+    )
+    assert "openwebui" in cfg.provider_settings
+    assert "grok" in cfg.provider_settings
+    assert cfg.provider_settings["openai"].model == "custom-openai"
+
+
+def test_llm_config_detects_provider_with_custom_api_key_env():
+    cfg = LLMConfig()
+    cfg.provider_settings["openai"].api_key_env = "MY_OPENAI_KEY"
+    resolved = cfg.resolved({"MY_OPENAI_KEY": "sk-custom"})
+    assert resolved.provider == "openai"
+    assert resolved.api_key_env == "MY_OPENAI_KEY"
+
+
+def test_llm_config_prefers_selected_provider_when_its_key_is_set():
+    cfg = LLMConfig(provider="github_copilot")
+    resolved = cfg.resolved({"GITHUB_TOKEN": "ghp_test", "OPENAI_API_KEY": "sk-test"})
+    assert resolved.provider == "github_copilot"
+    assert resolved.api_key_env == "GITHUB_TOKEN"
+
+
+def test_llm_config_detect_provider_honors_empty_env_mapping(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    cfg = LLMConfig()
+    assert cfg.detect_provider({}) is None
+
+
+def test_llm_config_resolved_honors_empty_env_mapping(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    cfg = LLMConfig(provider="github_copilot")
+    resolved = cfg.resolved({})
+    assert resolved.provider == "github_copilot"
+
+
+def test_llm_config_reconciles_selected_provider_top_level_fields():
+    cfg = LLMConfig(
+        provider="openai",
+        model="custom-model",
+        api_base="https://custom.example/v1",
+        api_key_env="OPENAI_API_KEY",
+        max_tokens=123,
+        temperature=0.1,
+    )
+    resolved = cfg.resolved({"OPENAI_API_KEY": "sk-test"})
+    assert resolved.provider == "openai"
+    selected = cfg.provider_settings["openai"]
+    assert resolved.model == selected.model
+    assert resolved.api_base == selected.api_base
+    assert resolved.api_key_env == selected.api_key_env
+    assert resolved.max_tokens == selected.max_tokens
+    assert resolved.temperature == selected.temperature
 
 
 def test_source_material():

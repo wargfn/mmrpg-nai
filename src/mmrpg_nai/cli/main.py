@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 import typer
 from rich.console import Console
@@ -15,6 +19,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
+from mmrpg_nai import __version__
 from mmrpg_nai.adventure.importer import (
     export_template_schema,
     import_adventure,
@@ -46,6 +51,25 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"mmrpg-nai {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _app_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    return None
+
+
 def _get_store(data_dir: str) -> Store:
     return Store(data_dir)
 
@@ -72,10 +96,85 @@ def _mask_token(token: str) -> str:
     return f"{token[:4]}{'*' * (len(token) - 8)}{token[-4:]}"
 
 
+def _mcp_get_json(base_url: str, path: str) -> dict[str, Any]:
+    req = urlrequest.Request(f"{base_url.rstrip('/')}{path}", method="GET")
+    try:
+        with urlrequest.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urlerror.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
+    except urlerror.URLError as exc:
+        raise RuntimeError(f"Could not reach MCP service at {base_url}: {exc}") from exc
+
+
+def _mcp_post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    req = urlrequest.Request(
+        f"{base_url.rstrip('/')}{path}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urlerror.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
+    except urlerror.URLError as exc:
+        raise RuntimeError(f"Could not reach MCP service at {base_url}: {exc}") from exc
+
+
+def _mcp_session_listed_active(base_url: str, session_id: str) -> bool:
+    active = _mcp_get_json(base_url, "/web/active-sessions")
+    sessions = active.get("sessions", []) if isinstance(active, dict) else []
+    return any(str(s.get("id", "")).strip() == session_id for s in sessions)
+
+
+def _spawn_background_mcp_service(host: str, port: int, data_dir: str) -> int:
+    cmd = [
+        sys.executable,
+        "-m",
+        "mmrpg_nai.cli.main",
+        "serve",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--data-dir",
+        data_dir,
+        "--foreground",
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        proc.wait(timeout=0.75)
+    except subprocess.TimeoutExpired:
+        return int(proc.pid)
+    stderr = ""
+    if proc.stderr is not None:
+        stderr = proc.stderr.read().decode("utf-8", errors="replace").strip()
+    detail = f" (exit code {proc.returncode})"
+    if stderr:
+        detail += f": {stderr}"
+    raise RuntimeError(f"Background MCP service failed to start{detail}")
+
+
 def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
     users = store.users.list_all()
     if not users:
-        return []
+        console.print("[yellow]No users found.[/yellow]")
+        create_now = Prompt.ask("Create a new user now? [Y/n]", default="y").strip().lower()
+        if create_now not in {"", "y", "yes"}:
+            return []
+        new_user = _create_user_for_session(store)
+        return [new_user]
     table = Table("#", "ID", "Name", "Email", "Last Login")
     for i, user in enumerate(users, 1):
         last_login = user.last_login_at.isoformat(timespec="seconds") if user.last_login_at else "—"
@@ -109,12 +208,59 @@ def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
         console.print("[red]No matching users found. Try again.[/red]")
 
 
+def _create_user_for_session(store: Store) -> User:
+    first_name = Prompt.ask("First name").strip()
+    while not first_name:
+        console.print("[red]First name is required.[/red]")
+        first_name = Prompt.ask("First name").strip()
+    last_name = Prompt.ask("Last name", default="").strip()
+    email = Prompt.ask("Email", default="").strip()
+    notes = Prompt.ask("Notes", default="")
+    user = User(first_name=first_name, last_name=last_name, email=email, notes=notes)
+    store.users.save(user)
+    console.print(f"[green]Created user: {user.display_name} ({user.id[:8]})[/green]")
+    return user
+
+
+def _create_unnamed_character_for_session(store: Store) -> Character:
+    existing = {c.name for c in store.characters.list_all()}
+    base = "Unnamed Character"
+    name = base
+    idx = 2
+    while name in existing:
+        name = f"{base} {idx}"
+        idx += 1
+    character = Character(name=name, alias="", background="", is_npc=False)
+    store.characters.save(character)
+    console.print(f"[green]Created character: {character.name} ({character.id[:8]})[/green]")
+    return character
+
+
+def _create_character_for_session(store: Store, allow_unnamed: bool = False) -> Character:
+    name = Prompt.ask("Character name").strip()
+    while not name:
+        if allow_unnamed:
+            use_unnamed = Prompt.ask("Use unnamed character? [Y/n]", default="y").strip().lower()
+            if use_unnamed in {"", "y", "yes"}:
+                return _create_unnamed_character_for_session(store)
+        console.print("[red]Character name is required.[/red]")
+        name = Prompt.ask("Character name").strip()
+    alias = Prompt.ask("Alias", default="").strip()
+    background = Prompt.ask("Background", default="")
+    character = Character(name=name, alias=alias, background=background, is_npc=False)
+    store.characters.save(character)
+    console.print(f"[green]Created character: {character.name} ({character.id[:8]})[/green]")
+    return character
+
+
 # ---------------------------------------------------------------------------
 # Config commands
 # ---------------------------------------------------------------------------
 
 config_app = typer.Typer(help="Manage narrator configuration.")
 app.add_typer(config_app, name="config")
+provider_app = typer.Typer(help="Manage AI providers.")
+config_app.add_typer(provider_app, name="provider")
 
 
 @config_app.command("show")
@@ -148,6 +294,108 @@ def config_set(
     console.print(f"[green]Set {key} = {value}[/green]")
 
 
+@provider_app.command("list")
+def config_provider_list(
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """List all available AI provider profiles."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    llm_cfg = cfg.llm
+    resolved = llm_cfg.resolved(os.environ)
+    table = Table("Provider", "Model", "API Base", "API Key Env", "Selected", "Detected")
+    detected_provider = llm_cfg.detect_provider(os.environ)
+    for name in sorted(llm_cfg.provider_settings):
+        ps = llm_cfg.provider_settings[name]
+        table.add_row(
+            name,
+            ps.model,
+            ps.api_base,
+            ps.api_key_env,
+            "✓" if llm_cfg.provider == name else "",
+            "✓" if detected_provider == name else "",
+        )
+    console.print(table)
+    console.print(f"[dim]Available providers: {', '.join(sorted(llm_cfg.provider_settings.keys()))}[/dim]")
+    console.print(f"[dim]Runtime active provider: {resolved.provider}[/dim]")
+
+
+@provider_app.command("show")
+def config_provider_show(
+    provider: Optional[str] = typer.Argument(None, help="Provider name (default: currently selected provider)"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Show provider configuration."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    llm_cfg = cfg.llm
+    selected_provider = provider or llm_cfg.provider
+    ps = llm_cfg.provider_settings.get(selected_provider)
+    if ps is None:
+        console.print(f"[red]Unknown provider: {selected_provider}[/red]")
+        console.print(f"[yellow]Available: {', '.join(sorted(llm_cfg.provider_settings.keys()))}[/yellow]")
+        raise typer.Exit(1)
+    data = {
+        "provider": selected_provider,
+        "model": ps.model,
+        "api_base": ps.api_base,
+        "api_key_env": ps.api_key_env,
+        "max_tokens": ps.max_tokens,
+        "temperature": ps.temperature,
+        "selected": llm_cfg.provider == selected_provider,
+        "detected": llm_cfg.detect_provider(os.environ) == selected_provider,
+    }
+    console.print_json(json.dumps(data, indent=2))
+
+
+@provider_app.command("select")
+def config_provider_select(
+    provider: str = typer.Argument(..., help="Provider name to select"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Select default provider profile."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    llm_cfg = cfg.llm
+    ps = llm_cfg.provider_settings.get(provider)
+    if ps is None:
+        console.print(f"[red]Unknown provider: {provider}[/red]")
+        console.print(f"[yellow]Available: {', '.join(sorted(llm_cfg.provider_settings.keys()))}[/yellow]")
+        raise typer.Exit(1)
+
+    cfg.llm.provider = provider
+    cfg.llm.model = ps.model
+    cfg.llm.api_base = ps.api_base
+    cfg.llm.api_key_env = ps.api_key_env
+    cfg.llm.max_tokens = ps.max_tokens
+    cfg.llm.temperature = ps.temperature
+    store.save_config(cfg)
+    console.print(
+        f"[green]Selected provider: {provider}[/green]\n"
+        f"[dim]Model: {ps.model} • API base: {ps.api_base} • API key env: {ps.api_key_env}[/dim]"
+    )
+
+
+@provider_app.command("model")
+def config_provider_model(
+    model: str = typer.Argument(..., help="New model ID for the currently selected provider"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Set the model for the currently selected provider."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    provider = cfg.llm.provider
+    ps = cfg.llm.provider_settings.get(provider)
+    if ps is None:
+        console.print(f"[red]Selected provider {provider!r} has no provider_settings entry.[/red]")
+        raise typer.Exit(1)
+
+    ps.model = model
+    cfg.llm.model = model
+    store.save_config(cfg)
+    console.print(f"[green]Set model for provider {provider}: {model}[/green]")
+
+
 @config_app.command("system-prompt")
 def config_system_prompt(
     prompt_file: Optional[Path] = typer.Option(None, help="Path to a .txt file with the system prompt"),
@@ -169,29 +417,30 @@ def config_models(
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
     filter_text: Optional[str] = typer.Option(None, "--filter", "-f", help="Case-insensitive substring to filter model IDs"),
 ) -> None:
-    """List models available on the GitHub Copilot API endpoint.
+    """List models available on the currently detected AI provider endpoint.
 
     Reads your token from the environment variable configured in llm.api_key_env
-    (default: GITHUB_TOKEN) and queries the /models endpoint.  The current model
-    in use is highlighted.
+    and queries the /models endpoint. The current model in use is highlighted.
 
     After choosing a model, apply it with:
 
-        mmrpg-nai config set llm.model <model-id>
+        mmrpg-nai config set llm.provider_settings.<provider>.model <model-id>
     """
     import os as _os
 
     store = _get_store(data_dir)
     cfg = store.load_config()
+    llm_cfg = cfg.llm.resolved(_os.environ)
 
-    api_key = _os.environ.get(cfg.llm.api_key_env, "").strip()
+    api_key = _os.environ.get(llm_cfg.api_key_env, "").strip()
     if not api_key:
         console.print(
             Panel(
-                f"Environment variable [bold]{cfg.llm.api_key_env!r}[/bold] is not set.\n"
-                "  1. Create a GitHub token at https://github.com/settings/tokens\n"
-                "  2. Enable GitHub Copilot on your account (https://github.com/features/copilot)\n"
-                f"  3. Export it:  export {cfg.llm.api_key_env}=ghp_...",
+                f"Environment variable [bold]{llm_cfg.api_key_env!r}[/bold] is not set.\n"
+                f"  1. Detected provider: [bold]{llm_cfg.provider}[/bold]\n"
+                f"  2. Export a key/token: [bold]export {llm_cfg.api_key_env}=...[/bold]\n"
+                "  3. Select a provider: [bold]mmrpg-nai config provider select <provider>[/bold]\n"
+                "  4. Set model for that provider: [bold]mmrpg-nai config provider model <model-id>[/bold]",
                 title="[bold red]⚠ Token not set[/bold red]",
                 border_style="red",
             )
@@ -208,10 +457,10 @@ def config_models(
         )
         from mmrpg_nai.llm.client import _wrap_api_error
 
-        client = _OpenAI(base_url=cfg.llm.api_base, api_key=api_key)
+        client = _OpenAI(base_url=llm_cfg.api_base, api_key=api_key)
         models_response = client.models.list()
     except (_APIConnectionError, _APIStatusError, _AuthenticationError, _RateLimitError) as exc:
-        wrapped = _wrap_api_error(exc, cfg.llm)
+        wrapped = _wrap_api_error(exc, llm_cfg)
         if isinstance(wrapped, PermissionError):
             console.print(Panel(str(wrapped), title="[bold red]⚠ Authentication error[/bold red]", border_style="red"))
         elif isinstance(wrapped, ConnectionError):
@@ -222,7 +471,7 @@ def config_models(
     except Exception as exc:
         console.print(
             Panel(
-                f"{exc}\n\nEndpoint: {cfg.llm.api_base}",
+                f"{exc}\n\nEndpoint: {llm_cfg.api_base}",
                 title="[bold red]⚠ Failed to fetch models[/bold red]",
                 border_style="red",
             )
@@ -242,11 +491,11 @@ def config_models(
         "Model ID",
         "Owner / Provider",
         "Active",
-        title=f"Models at {cfg.llm.api_base}",
+        title=f"Models at {llm_cfg.api_base} ({llm_cfg.provider})",
         show_lines=False,
     )
     for m in model_data:
-        is_active = m.id == cfg.llm.model
+        is_active = m.id == llm_cfg.model
         owner = getattr(m, "owned_by", "") or ""
         table.add_row(
             f"[bold green]{m.id}[/bold green]" if is_active else m.id,
@@ -256,8 +505,8 @@ def config_models(
 
     console.print(table)
     console.print(
-        f"\n[dim]Currently active model: [bold]{cfg.llm.model}[/bold]  "
-        f"(change with: mmrpg-nai config set llm.model <id>)[/dim]"
+        f"\n[dim]Detected provider: [bold]{llm_cfg.provider}[/bold] • Active model: [bold]{llm_cfg.model}[/bold]\n"
+        f"Change with: mmrpg-nai config provider model <id>[/dim]"
     )
 
 
@@ -821,14 +1070,34 @@ def session_run(
             for i, ch in enumerate(pc_pool, 1):
                 ctable.add_row(str(i), ch.id[:8], ch.name, ch.alias, ch.rank.value)
             console.print(ctable)
-            console.print("[dim]Enter character numbers separated by commas (e.g. 1,3) or press Enter to use all.[/dim]")
-            raw_chars = Prompt.ask("Characters playing today", default="all")
-            if raw_chars.strip().lower() in {"", "all"}:
-                party = pc_pool
-            else:
+            console.print(
+                "[dim]Enter numbers/IDs (e.g. 1,3), 'new' to create, 'unnamed' for a placeholder, or Enter for all.[/dim]"
+            )
+            while True:
+                raw_chars = Prompt.ask("Characters playing today", default="all")
+                if raw_chars.strip().lower() in {"", "all"}:
+                    party = pc_pool
+                    break
+                created_chars: list[Character] = []
                 selected: list[Character] = []
+                selector_tokens: list[str] = []
                 for token in raw_chars.split(","):
                     token = token.strip()
+                    lowered = token.lower()
+                    if lowered in {"new", "create"}:
+                        created = _create_character_for_session(store, allow_unnamed=True)
+                        created_chars.append(created)
+                        pc_pool.append(created)
+                        continue
+                    if lowered in {"unnamed", "anon", "anonymous"}:
+                        created = _create_unnamed_character_for_session(store)
+                        created_chars.append(created)
+                        pc_pool.append(created)
+                        continue
+                    selector_tokens.append(token)
+
+                selected.extend(created_chars)
+                for token in selector_tokens:
                     if token.isdigit():
                         idx = int(token) - 1
                         if 0 <= idx < len(pc_pool):
@@ -836,9 +1105,28 @@ def session_run(
                     else:
                         matched = [c for c in pc_pool if c.id.startswith(token) or c.name.lower() == token.lower()]
                         selected.extend(matched)
-                party = selected or pc_pool
+                dedup: dict[str, Character] = {}
+                for c in selected:
+                    dedup[c.id] = c
+                party = list(dedup.values())
+                if party:
+                    break
+                console.print("[red]No matching characters found. Try again.[/red]")
+        else:
+            console.print("[yellow]No player characters found.[/yellow]")
+            create_char = Prompt.ask("Create a new player character now? [Y/n]", default="y").strip().lower()
+            if create_char in {"", "y", "yes"}:
+                created_character = _create_character_for_session(store, allow_unnamed=True)
+                party = [created_character]
 
         session_users = _select_users_for_session(store, campaign)
+        for character in party:
+            if character.id not in campaign.character_ids:
+                campaign.character_ids.append(character.id)
+        for user in session_users:
+            if user.id not in campaign.user_ids:
+                campaign.user_ids.append(user.id)
+        store.campaigns.save(campaign)
 
         # ------------------------------------------------------------------
         # 3. Create a new session for this run
@@ -855,9 +1143,6 @@ def session_run(
         store.sessions.save(session)
         # Link session to campaign
         campaign.session_ids.append(session.id)
-        for user in session_users:
-            if user.id not in campaign.user_ids:
-                campaign.user_ids.append(user.id)
         store.campaigns.save(campaign)
         console.print(f"[green]Created session #{session.session_number}: {session.id}[/green]")
 
@@ -1003,6 +1288,258 @@ def session_run(
             console.print(f"[yellow]Could not update campaign progress: {exc}[/yellow]")
 
 
+@session_app.command("query")
+def session_query(
+    question: str = typer.Argument(..., help="Rules/stats/checks question for the LLM"),
+    campaign_id: Optional[str] = typer.Option(None, help="Campaign ID or prefix"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID or prefix"),
+    character_ids: str = typer.Option(
+        "",
+        help="Comma-separated character IDs/prefixes to include in context (optional)",
+    ),
+    include_source_materials: bool = typer.Option(
+        True,
+        "--include-source-materials/--no-include-source-materials",
+        help="Include campaign source materials in context",
+    ),
+    stream: bool = typer.Option(False, help="Stream response"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Query the LLM with loaded context for rules, stats, and checks."""
+    from mmrpg_nai.llm.narrator import Narrator
+
+    if bool(campaign_id) == bool(session_id):
+        console.print("[red]Provide exactly one of --campaign-id or --session-id.[/red]")
+        raise typer.Exit(1)
+
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    cfg.llm = cfg.llm.resolved(os.environ)
+
+    if session_id:
+        session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")
+        campaign = store.campaigns.load(session.campaign_id)
+        if campaign is None:
+            console.print(f"[red]Campaign not found: {session.campaign_id}[/red]")
+            raise typer.Exit(1)
+    else:
+        campaign = _load_campaign_or_exit(store, campaign_id or "")
+        session = Session(
+            campaign_id=campaign.id,
+            title="Context Query",
+            session_number=0,
+            participants=[],
+            user_ids=[],
+        )
+
+    party: list[Character] = []
+    requested_ids = [part.strip() for part in character_ids.split(",") if part.strip()]
+    allowed_ids = set(session.participants) if session_id else set(campaign.character_ids)
+    if requested_ids:
+        seen_char_ids: set[str] = set()
+        for rid in requested_ids:
+            ch = _load_by_prefix_or_exact(store.characters, rid, "Character")
+            if allowed_ids and ch.id not in allowed_ids:
+                console.print(f"[red]Character {ch.id[:8]} is not in the selected session/campaign context.[/red]")
+                raise typer.Exit(1)
+            if ch.id not in seen_char_ids:
+                party.append(ch)
+                seen_char_ids.add(ch.id)
+    else:
+        base_ids = session.participants or campaign.character_ids
+        party = [c for cid in base_ids if (c := store.characters.load(cid)) is not None]
+
+    source_materials = []
+    if include_source_materials:
+        source_materials = [
+            m
+            for mid in campaign.source_material_ids
+            if (m := store.source_materials.load(mid)) is not None
+        ]
+
+    narrator = Narrator(cfg, store)
+    narrator.start_session(session, campaign, party, source_materials=source_materials)
+    try:
+        answer = narrator.query_rules(question, stream=stream)
+    except Exception as exc:
+        console.print(Panel(str(exc), title="[bold red]⚠ Query failed[/bold red]", border_style="red"))
+        raise typer.Exit(1)
+
+    console.print(Panel(Markdown(answer), title="[bold cyan]Rules Query[/bold cyan]"))
+
+
+@session_app.command("attach")
+def session_attach(
+    session_id: Optional[str] = typer.Option(None, help="Session ID or prefix (optional)"),
+    mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
+) -> None:
+    """Attach CLI to an active MCP web session and chat through it."""
+    try:
+        active = _mcp_get_json(mcp_base_url, "/web/active-sessions")
+    except Exception as exc:
+        console.print(Panel(str(exc), title="[bold red]⚠ MCP connection error[/bold red]", border_style="red"))
+        raise typer.Exit(1)
+
+    sessions = active.get("sessions", [])
+    if not sessions and not session_id:
+        console.print("[yellow]No active sessions found on MCP service.[/yellow]")
+        raise typer.Exit(1)
+
+    selected: dict[str, Any] | None = None
+    if session_id:
+        exact = next((s for s in sessions if s.get("id") == session_id), None)
+        if exact is not None:
+            selected = exact
+        else:
+            matches = [s for s in sessions if str(s.get("id", "")).startswith(session_id)]
+            if len(matches) == 1:
+                selected = matches[0]
+            elif len(matches) > 1:
+                console.print("[red]Session prefix matches multiple active sessions; be more specific.[/red]")
+                raise typer.Exit(1)
+        if selected is None:
+            try:
+                state_direct = _mcp_get_json(mcp_base_url, f"/web/session/{session_id}")
+            except RuntimeError as exc:
+                if str(exc).startswith("HTTP 404:"):
+                    state_direct = None
+                else:
+                    raise
+            if isinstance(state_direct, dict) and state_direct.get("session"):
+                selected = state_direct.get("session")
+                campaign_from_state = state_direct.get("campaign") or {}
+                campaign_id = str(campaign_from_state.get("id", "")).strip()
+                if campaign_id and isinstance(selected, dict):
+                    selected.setdefault("campaign_id", campaign_id)
+                    selected.setdefault("title", str(selected.get("title", "")))
+                    selected.setdefault("user_ids", selected.get("user_ids", []))
+            if selected is not None:
+                pass
+            else:
+                try:
+                    bootstrap = _mcp_get_json(mcp_base_url, "/web/bootstrap")
+                except Exception as exc:
+                    console.print(Panel(str(exc), title="[bold red]⚠ MCP connection error[/bold red]", border_style="red"))
+                    raise typer.Exit(1)
+                all_sessions = bootstrap.get("sessions", []) if isinstance(bootstrap, dict) else []
+                exact_any = next((s for s in all_sessions if s.get("id") == session_id), None)
+                if exact_any is not None:
+                    selected = exact_any
+                else:
+                    matches_any = [s for s in all_sessions if str(s.get("id", "")).startswith(session_id)]
+                    if len(matches_any) == 1:
+                        selected = matches_any[0]
+                    elif len(matches_any) > 1:
+                        console.print("[red]Session prefix matches multiple sessions; be more specific.[/red]")
+                        raise typer.Exit(1)
+    else:
+        table = Table("#", "Session ID", "Campaign ID", "Title", "Players")
+        for i, s in enumerate(sessions, 1):
+            table.add_row(
+                str(i),
+                str(s.get("id", "")),
+                str(s.get("campaign_id", "")),
+                str(s.get("title", "")),
+                str(len(s.get("user_ids", []) or [])),
+            )
+        console.print(table)
+        raw = Prompt.ask("Select active session by number or ID prefix")
+        if raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(sessions):
+                selected = sessions[idx]
+        if selected is None:
+            matches = [s for s in sessions if str(s.get("id", "")).startswith(raw.strip())]
+            if len(matches) == 1:
+                selected = matches[0]
+            elif len(matches) > 1:
+                console.print("[red]Session prefix matches multiple active sessions; be more specific.[/red]")
+                raise typer.Exit(1)
+
+    if selected is None:
+        console.print(f"[red]Session not found: {session_id or '(selection)'}[/red]")
+        raise typer.Exit(1)
+
+    selected_id = str(selected.get("id", ""))
+    resumed_recap = ""
+    resumed_start_prompt = ""
+    try:
+        state = _mcp_get_json(mcp_base_url, f"/web/session/{selected_id}")
+        state_session = state.get("session") or {}
+        canonical_session_id = str(state_session.get("id", "")).strip()
+        if canonical_session_id:
+            selected = {**selected, **state_session}
+            selected_id = canonical_session_id
+        is_active = bool(state.get("is_active"))
+        if is_active:
+            listed = _mcp_session_listed_active(mcp_base_url, selected_id)
+            if not listed:
+                raise RuntimeError("Session reports active but is not listed in active sessions.")
+        if not is_active:
+            resumed = _mcp_post_json(mcp_base_url, "/web/session/start", {"session_id": selected_id})
+            resumed_session = resumed.get("session") or {}
+            if isinstance(resumed_session, dict):
+                selected = {**selected, **resumed_session}
+            resumed_recap = str(resumed.get("recap", "")).strip()
+            resumed_start_prompt = str(resumed.get("start_prompt", "")).strip()
+            resumed_campaign = resumed.get("campaign") or {}
+            if isinstance(resumed_campaign, dict):
+                resumed_campaign_id = str(resumed_campaign.get("id", "")).strip()
+                if resumed_campaign_id:
+                    selected["campaign_id"] = resumed_campaign_id
+            selected_id = str(selected.get("id", selected_id))
+            if not _mcp_session_listed_active(mcp_base_url, selected_id):
+                raise RuntimeError("Session could not be confirmed in active sessions after resume.")
+    except Exception as exc:
+        console.print(Panel(str(exc), title="[bold red]⚠ MCP session error[/bold red]", border_style="red"))
+        raise typer.Exit(1)
+
+    console.print(
+        Panel(
+            f"[bold]Attached Session:[/bold] {selected.get('title', '—')} ({selected_id[:8]})\n"
+            f"[bold]Campaign:[/bold] {str(selected.get('campaign_id', ''))[:8]}\n"
+            f"[dim]MCP: {mcp_base_url}[/dim]\n\n"
+            f"[dim]Type your action/dialogue. Use [square brackets] for meta. "
+            f"Enter 'quit' or 'exit' to detach.[/dim]",
+            title="🔗 Attached to Active Session",
+        )
+    )
+    if resumed_recap:
+        console.print(Panel(Markdown(resumed_recap), title="[bold yellow]Previously…[/bold yellow]"))
+    if resumed_start_prompt:
+        console.print(Panel(Markdown(resumed_start_prompt), title="[bold cyan]Start Here[/bold cyan]"))
+
+    while True:
+        try:
+            player_input = Prompt.ask("[bold green]You[/bold green]")
+        except (EOFError, KeyboardInterrupt):
+            break
+        if player_input.strip().lower() in {"quit", "exit", "q"}:
+            break
+        if not player_input.strip():
+            continue
+
+        try:
+            resp = _mcp_post_json(mcp_base_url, f"/web/session/{selected_id}/chat", {"message": player_input})
+        except Exception as exc:
+            console.print(Panel(str(exc), title="[bold red]⚠ MCP chat error[/bold red]", border_style="red"))
+            break
+
+        mode = str(resp.get("mode", "narrate"))
+        output = str(resp.get("response", ""))
+        if mode == "meta":
+            console.print("[bold yellow]Narrator (meta)[/bold yellow]")
+        else:
+            console.print("[bold blue]Narrator[/bold blue]")
+        if mode == "meta":
+            console.print(Panel(Markdown(output), border_style="yellow"))
+        else:
+            console.print(Panel(Markdown(output), border_style="blue"))
+        console.print()
+
+    console.print("[bold]Detached from active session.[/bold]")
+
+
 @session_app.command("log")
 def session_log(
     session_id: str = typer.Argument(...),
@@ -1029,7 +1566,6 @@ def session_log(
 
 user_app = typer.Typer(help="Manage users/players.")
 app.add_typer(user_app, name="user")
-app.add_typer(user_app, name="users")
 
 
 @user_app.command("list")
@@ -1348,6 +1884,11 @@ def serve(
     host: str = typer.Option("127.0.0.1", help="Bind host"),
     port: int = typer.Option(8000, help="Bind port"),
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+    background: bool = typer.Option(
+        False,
+        "--background/--foreground",
+        help="Run as a detached background process",
+    ),
 ) -> None:
     """Start the MCP REST service."""
     try:
@@ -1356,20 +1897,78 @@ def serve(
         console.print("[red]uvicorn is required: pip install uvicorn[/red]")
         raise typer.Exit(1)
 
-    from mmrpg_nai.mcp.service import app as fastapi_app, init_app
-
     cfg = _get_store(data_dir).load_config()
-    token_env = cfg.llm.api_key_env
+    llm_cfg = cfg.llm.resolved(os.environ)
+    token_env = llm_cfg.api_key_env
     token_value = os.environ.get(token_env, "")
     if token_value.strip():
-        console.print(f"[dim]{token_env} detected: {_mask_token(token_value)}[/dim]")
+        console.print(f"[dim]{llm_cfg.provider} detected via {token_env}: {_mask_token(token_value)}[/dim]")
     else:
-        console.print(f"[yellow]{token_env} is not set; web chat requests will fail until it is configured.[/yellow]")
+        console.print(
+            f"[yellow]{token_env} is not set for provider '{llm_cfg.provider}'; "
+            "web chat requests will fail until it is configured.[/yellow]"
+        )
+
+    if background:
+        try:
+            pid = _spawn_background_mcp_service(host, port, data_dir)
+        except RuntimeError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[green]MCP Service started in background (pid={pid}) at http://{host}:{port}[/green]")
+        return
+
+    from mmrpg_nai.mcp.service import app as fastapi_app, init_app
 
     init_app(data_dir)
     console.print(f"[bold]MCP Service running at http://{host}:{port}[/bold]")
     console.print(f"[dim]API docs: http://{host}:{port}/docs[/dim]")
     uvicorn.run(fastapi_app, host=host, port=port)
+
+
+@app.command("serve-discord")
+def serve_discord(
+    session_id: Optional[str] = typer.Option(None, help="Active/resumable session ID (optional)"),
+    channel_id: int = typer.Option(..., help="Discord channel ID to listen and post in"),
+    mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
+    mcp_timeout_seconds: float = typer.Option(
+        120.0,
+        "--mcp-timeout-seconds",
+        min=1.0,
+        help="Timeout for MCP HTTP requests from Discord bridge",
+    ),
+    token_env: str = typer.Option("DISCORD_BOT_TOKEN", help="Environment variable containing Discord bot token"),
+    resume_if_inactive: bool = typer.Option(
+        True,
+        "--resume-if-inactive/--no-resume-if-inactive",
+        help="Auto-resume session through MCP if target session is inactive",
+    ),
+    command_prefix: str = typer.Option(
+        "",
+        help="Optional command prefix to filter messages (e.g. !nai)",
+    ),
+) -> None:
+    """Start Discord bridge process that relays channel messages to an MCP session."""
+    from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+    token_value = os.environ.get(token_env, "").strip()
+    if not token_value:
+        console.print(f"[red]{token_env} is not set.[/red]")
+        raise typer.Exit(1)
+
+    target = session_id or "(none; use /campaign new and /session start in Discord)"
+    console.print(f"[dim]Starting Discord bridge on channel {channel_id} -> session {target} via {mcp_base_url}[/dim]")
+    run_discord_bridge(
+        DiscordBridgeSettings(
+            discord_token=token_value,
+            channel_id=channel_id,
+            session_id=session_id,
+            mcp_base_url=mcp_base_url,
+            mcp_timeout_seconds=mcp_timeout_seconds,
+            resume_if_inactive=resume_if_inactive,
+            command_prefix=command_prefix,
+        )
+    )
 
 
 if __name__ == "__main__":

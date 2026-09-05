@@ -1,4 +1,4 @@
-"""LLM client wrapping the OpenAI-compatible GitHub Copilot / GPT-5.4 API."""
+"""LLM client for configured OpenAI-compatible providers."""
 
 from __future__ import annotations
 
@@ -21,33 +21,78 @@ _MAX_RETRIES = 2
 _RETRY_DELAY = 2.0  # seconds between retries
 
 
+def _prepare_messages(cfg: LLMConfig, messages: list[dict]) -> list[dict]:
+    """Provider-specific message normalization before API calls."""
+    if cfg.provider != "google_ai_studio":
+        return messages
+
+    normalized: list[dict] = []
+    system_index = 0
+    for m in messages:
+        role = m.get("role", "")
+        content = m.get("content", "")
+        if role == "system":
+            if system_index == 0:
+                normalized.append({
+                    "role": "user",
+                    "content": f"[SYSTEM INSTRUCTIONS]: {content}",
+                })
+            else:
+                rewritten = content
+                if not rewritten.startswith("[OUT-OF-GAME NARRATOR DIRECTION]:"):
+                    rewritten = f"[OUT-OF-GAME NARRATOR DIRECTION]: {rewritten}"
+                normalized.append({
+                    "role": "user",
+                    "content": rewritten,
+                })
+            system_index += 1
+            continue
+        normalized.append(m)
+    return normalized
+
+
+def _provider_label(provider: str) -> str:
+    labels = {
+        "google_ai_studio": "Google AI Studio",
+        "openai": "OpenAI",
+        "grok": "xAI Grok",
+        "github_copilot": "GitHub Copilot",
+        "ollama": "OpenWebUI/Ollama",
+        "openwebui": "OpenWebUI",
+    }
+    return labels.get(provider, provider)
+
+
 def _build_client(cfg: LLMConfig) -> OpenAI:
+    cfg = cfg.resolved(os.environ)
     api_key = os.environ.get(cfg.api_key_env, "").strip()
     if not api_key:
+        provider = _provider_label(cfg.provider)
         raise EnvironmentError(
             f"Environment variable {cfg.api_key_env!r} is not set or is empty.\n"
-            "  1. Create a GitHub Personal Access Token at https://github.com/settings/tokens\n"
-            "  2. Enable GitHub Copilot on your account (https://github.com/features/copilot)\n"
-            f"  3. Export it:  export {cfg.api_key_env}=ghp_...\n"
-            "  Or add it to your .env file and re-run."
+            f"Detected provider: {provider}\n"
+            f"  1. Set {cfg.api_key_env} for your {provider} connection\n"
+            "  2. Or update llm.provider_settings in config.json\n"
+            "  3. Re-run your command."
         )
     return OpenAI(base_url=cfg.api_base, api_key=api_key)
 
 
 def _wrap_api_error(exc: Exception, cfg: LLMConfig) -> Exception:
     """Convert an OpenAI SDK exception into one with an actionable message."""
+    provider = _provider_label(cfg.provider)
     if isinstance(exc, AuthenticationError):
         return PermissionError(
             f"Authentication failed (HTTP 401/403).\n"
-            f"  • Check that {cfg.api_key_env!r} is a valid GitHub token.\n"
-            "  • You need an active GitHub Copilot subscription (https://github.com/features/copilot).\n"
-            "  • Tokens expire — generate a new one at https://github.com/settings/tokens"
+            f"  • Check that {cfg.api_key_env!r} is valid for {provider}.\n"
+            f"  • Confirm endpoint and provider config (provider={cfg.provider}, api_base={cfg.api_base}).\n"
+            "  • Rotate/regenerate the key if needed."
         )
     if isinstance(exc, RateLimitError):
         return RuntimeError(
-            "Rate limit reached on the GitHub Copilot API.\n"
+            f"Rate limit reached on {provider}.\n"
             "  • Wait a moment and try again.\n"
-            "  • Free-tier accounts have per-minute request limits."
+            "  • Check your provider quota and request limits."
         )
     if isinstance(exc, APIConnectionError):
         return ConnectionError(
@@ -62,17 +107,17 @@ def _wrap_api_error(exc: Exception, cfg: LLMConfig) -> Exception:
             f"  Response: {exc.message}\n"
             f"  Model requested: {cfg.model}\n"
             "  • Verify the model name is correct (run: mmrpg-nai config models).\n"
-            "  • Check https://github.com/features/copilot for supported models."
+            f"  • Check model availability for provider={provider}."
         )
     return exc
 
 
 class LLMClient:
-    """Thin wrapper around the OpenAI client configured for GitHub Copilot models."""
+    """Thin wrapper around the OpenAI client configured per detected provider."""
 
     def __init__(self, cfg: LLMConfig) -> None:
-        self.cfg = cfg
-        self._client = _build_client(cfg)
+        self.cfg = cfg.resolved()
+        self._client = _build_client(self.cfg)
 
     def complete(self, messages: list[dict], stream: bool = False) -> str | Iterator[str]:
         """Send messages and return the full assistant response (or a streaming iterator).
@@ -88,9 +133,10 @@ class LLMClient:
         """
         uses_completion_tokens = self.cfg.model.startswith(("gpt-5.", "gpt-5-"))
         token_param = "max_completion_tokens" if uses_completion_tokens else "max_tokens"
+        request_messages = _prepare_messages(self.cfg, messages)
         kwargs: dict = dict(
             model=self.cfg.model,
-            messages=messages,
+            messages=request_messages,
             temperature=self.cfg.temperature,
             stream=stream,
         )

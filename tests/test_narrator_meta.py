@@ -318,3 +318,16 @@ def test_meta_stream_callback_does_not_force_newline(cfg, store, session, campai
     assert response == "Meta response"
     assert chunks == ["Meta", " response"]
     mock_print.assert_not_called()
+
+
+def test_query_rules_uses_context_messages(cfg, store, session, campaign, character):
+    narrator = _make_narrator(cfg, store, session, campaign, [character])
+    result = narrator.query_rules("How does a melee check work?", stream=False)
+    assert result == "LLM response"
+    call_args = narrator.llm.complete.call_args
+    messages = call_args[0][0]
+    assert any(m["role"] == "system" for m in messages)
+    query_msg = messages[-1]
+    assert query_msg["role"] == "user"
+    assert "rules/stats/checks question" in query_msg["content"]
+    assert "melee check" in query_msg["content"]

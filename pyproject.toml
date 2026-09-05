@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mmrpg-nai"
-version = "0.1.0"
+version = "0.1.5"
 description = "Marvel Multiverse RPG AI Narrator Tools"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "openai>=1.30.0",
+    "discord.py>=2.4.0",
     "pydantic>=2.5.0",
     "pymupdf>=1.24.0",
     "typer>=0.12.0",

@@ -201,6 +201,33 @@ class Narrator:
         self.store.append_log(self._session)
         return response
 
+    def query_rules(self, question: str, stream: bool = False, output_callback=None) -> str:
+        """Query the model about rules, stats, and checks using current session context."""
+        query_prompt = (
+            "Answer this MMRPG rules/stats/checks question using the provided campaign, character, "
+            "session, and source-material context. If information is missing, say what is missing "
+            "instead of inventing it.\n\n"
+            f"Question: {question}"
+        )
+        messages = [*self._messages, {"role": "user", "content": query_prompt}]
+        result = self.llm.complete(messages, stream=stream)
+
+        if isinstance(result, str):
+            return result
+
+        use_default_output = output_callback is None
+        if output_callback is None:
+            def output_callback(chunk: str) -> None:
+                print(chunk, end="", flush=True)
+
+        chunks: list[str] = []
+        for chunk in result:
+            output_callback(chunk)
+            chunks.append(chunk)
+        if use_default_output:
+            print()
+        return "".join(chunks)
+
     def recap_last_session(self, last_session: "Session") -> str:
         """Generate a brief AI recap of the previous session to open the current one."""
         if not last_session.log:
@@ -296,6 +323,55 @@ class Narrator:
             },
         ]
         return self.llm.complete(messages, stream=False)  # type: ignore[return-value]
+
+    def summarise_session_close(self, session: Session, campaign: Campaign) -> tuple[str, str]:
+        """Generate an end-of-session summary and a next-session starting prompt."""
+        lines: list[str] = []
+        for entry in session.log:
+            if entry.role in ("player", "narrator", "meta"):
+                lines.append(f"{entry.role.capitalize()}: {entry.content}")
+        if not lines and session.synopsis:
+            lines = [session.synopsis]
+        if not lines:
+            return "", ""
+
+        transcript = "\n".join(lines[-80:])
+        plan_section = f"\n\nCampaign plan:\n{campaign.plan}" if campaign.plan else ""
+        progress_section = (
+            f"\n\nCurrent campaign progress summary:\n{campaign.campaign_progress}"
+            if campaign.campaign_progress
+            else ""
+        )
+        messages = [
+            {"role": "system", "content": self.cfg.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Campaign: {campaign.name}.{plan_section}{progress_section}\n\n"
+                    f"Session transcript:\n{transcript}\n\n"
+                    "Produce two sections with these exact headings:\n"
+                    "SESSION_SUMMARY:\n"
+                    "- 3-6 concise sentences summarizing what happened and current state.\n\n"
+                    "NEXT_SESSION_START:\n"
+                    "- A short opening prompt (2-4 sentences) describing where to resume play next session."
+                ),
+            },
+        ]
+        output = self.llm.complete(messages, stream=False)  # type: ignore[assignment]
+        text = str(output).strip()
+        if not text:
+            return "", ""
+        summary = ""
+        next_start = ""
+        marker_summary = "SESSION_SUMMARY:"
+        marker_next = "NEXT_SESSION_START:"
+        if marker_summary in text and marker_next in text:
+            before, after = text.split(marker_next, 1)
+            summary = before.split(marker_summary, 1)[-1].strip()
+            next_start = after.strip()
+        else:
+            summary = text
+        return summary, next_start
 
     # ------------------------------------------------------------------
     # Helpers

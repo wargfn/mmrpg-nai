@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +162,7 @@ class Session(BaseModel):
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ended_at: datetime | None = None
     notes: str = ""
+    start_prompt: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -258,12 +260,134 @@ class User(BaseModel):
 # ---------------------------------------------------------------------------
 
 class LLMConfig(BaseModel):
+    @staticmethod
+    def _default_provider_settings() -> dict[str, "LLMProviderSettings"]:
+        return {
+            "google_ai_studio": LLMProviderSettings(
+                model="gemini-2.5-flash",
+                api_base="https://generativelanguage.googleapis.com/v1beta/openai",
+                api_key_env="GOOGLE_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "openai": LLMProviderSettings(
+                model="gpt-4o",
+                api_base="https://api.openai.com/v1",
+                api_key_env="OPENAI_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "grok": LLMProviderSettings(
+                model="grok-4",
+                api_base="https://api.x.ai/v1",
+                api_key_env="XAI_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "github_copilot": LLMProviderSettings(
+                model="gpt-5.4",
+                api_base="https://api.githubcopilot.com",
+                api_key_env="GITHUB_TOKEN",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "ollama": LLMProviderSettings(
+                model="llama3.1",
+                api_base="http://localhost:11434/v1",
+                api_key_env="OLLAMA_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+            "openwebui": LLMProviderSettings(
+                model="llama3.1",
+                api_base="http://localhost:3000/ollama/v1",
+                api_key_env="OPENWEBUI_API_KEY",
+                max_tokens=4096,
+                temperature=0.8,
+            ),
+        }
+
     provider: str = "github_copilot"
     # Model name as listed on https://github.com/marketplace/models
     # Change with: mmrpg-nai config set llm.model <name>
     model: str = "gpt-5.4"
     api_base: str = "https://api.githubcopilot.com"
     api_key_env: str = "GITHUB_TOKEN"
+    max_tokens: int = 4096
+    temperature: float = 0.8
+    provider_settings: dict[str, "LLMProviderSettings"] = Field(default_factory=_default_provider_settings)
+
+    @model_validator(mode="after")
+    def _backfill_provider_settings(self) -> "LLMConfig":
+        defaults = self._default_provider_settings()
+        merged = {**defaults, **self.provider_settings}
+        self.provider_settings = merged
+        return self
+
+    def detect_provider(self, env: Mapping[str, str] | None = None) -> str | None:
+        env_map = env if env is not None else os.environ
+        detection_order = [
+            "google_ai_studio",
+            "openai",
+            "grok",
+            "github_copilot",
+            "ollama",
+            "openwebui",
+        ]
+        for provider in detection_order:
+            settings = self.provider_settings.get(provider)
+            if settings and (env_map.get(settings.api_key_env) or "").strip():
+                return provider
+        return None
+
+    def resolved(self, env: Mapping[str, str] | None = None) -> "LLMConfig":
+        managed_envs = {ps.api_key_env for ps in self.provider_settings.values()}
+        if self.api_key_env not in managed_envs:
+            return self
+        env_map = env if env is not None else os.environ
+        configured = self.provider_settings.get(self.provider)
+        if configured and (env_map.get(configured.api_key_env) or "").strip():
+            target_provider = self.provider
+        else:
+            detected = self.detect_provider(env_map)
+            target_provider = detected or self.provider
+        if target_provider == self.provider:
+            selected = self.provider_settings.get(self.provider)
+            if not selected:
+                return self
+            if self.api_key_env in managed_envs and (
+                self.model != selected.model
+                or self.api_base != selected.api_base
+                or self.api_key_env != selected.api_key_env
+                or self.max_tokens != selected.max_tokens
+                or self.temperature != selected.temperature
+            ):
+                return self.model_copy(update={
+                    "provider": self.provider,
+                    "model": selected.model,
+                    "api_base": selected.api_base,
+                    "api_key_env": selected.api_key_env,
+                    "max_tokens": selected.max_tokens,
+                    "temperature": selected.temperature,
+                })
+            return self
+        selected = self.provider_settings.get(target_provider)
+        if not selected:
+            return self
+        return self.model_copy(update={
+            "provider": target_provider,
+            "model": selected.model,
+            "api_base": selected.api_base,
+            "api_key_env": selected.api_key_env,
+            "max_tokens": selected.max_tokens,
+            "temperature": selected.temperature,
+        })
+
+
+class LLMProviderSettings(BaseModel):
+    model: str
+    api_base: str
+    api_key_env: str
     max_tokens: int = 4096
     temperature: float = 0.8
 

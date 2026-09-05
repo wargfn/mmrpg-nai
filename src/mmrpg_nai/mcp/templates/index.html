@@ -123,6 +123,7 @@
     let activeSessionId = null;
     let renderedLogCount = 0;
     let lastRecap = "";
+    let lastStartPrompt = "";
     let pollHandle = null;
     let pollingEnabled = false;
 
@@ -220,7 +221,7 @@
     async function fetchSessionState(reset = false) {
       if (!activeSessionId) return;
       if (document.visibilityState !== "visible") return;
-      const r = await fetch(`/web/session/${activeSessionId}`);
+      const r = await fetch(`/web/session/${activeSessionId}`, { cache: "no-store" });
       const data = await r.json();
       if (!r.ok) {
         appendLine("System", data.detail || "Could not fetch session state", "sys");
@@ -238,7 +239,7 @@
     }
 
     async function loadActiveSessions() {
-      const r = await fetch("/web/active-sessions");
+      const r = await fetch("/web/active-sessions", { cache: "no-store" });
       const data = await r.json();
       if (!r.ok) return;
       attachActiveSessionEl.innerHTML = "";
@@ -251,7 +252,7 @@
     }
 
     async function loadBootstrap() {
-      const r = await fetch("/web/bootstrap");
+      const r = await fetch("/web/bootstrap", { cache: "no-store" });
       const data = await r.json();
 
       campaignEl.innerHTML = "";
@@ -316,10 +317,14 @@
       setActiveStatus(data.session, true);
       renderedLogCount = 0;
       lastRecap = data.recap || "";
+      lastStartPrompt = data.start_prompt || "";
       chatLog.replaceChildren();
       appendSessionContext(data.session, data.campaign, data.users || [], data.participants || []);
       if (lastRecap) {
         appendLine("Previously", lastRecap, "sys");
+      }
+      if (lastStartPrompt) {
+        appendLine("Start Here", lastStartPrompt, "sys");
       }
       renderLog(data.session.log, false);
       await loadBootstrap();
@@ -378,8 +383,16 @@
         appendLine("System", "Could not end active session", "sys");
         return;
       }
+      if (data.summary) {
+        appendLine("Session Summary", data.summary, "sys");
+      }
+      if (data.start_prompt) {
+        appendLine("Next Session Start", data.start_prompt, "sys");
+      }
+      activeSessionId = null;
+      activeLabel.textContent = "No active session.";
       await loadActiveSessions();
-      await fetchSessionState(false);
+      await loadBootstrap();
     }
 
     async function listUsers() {
