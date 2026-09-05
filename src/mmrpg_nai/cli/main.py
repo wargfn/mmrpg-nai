@@ -1798,17 +1798,6 @@ def serve(
         console.print("[red]uvicorn is required: pip install uvicorn[/red]")
         raise typer.Exit(1)
 
-    if background:
-        try:
-            pid = _spawn_background_mcp_service(host, port, data_dir)
-        except RuntimeError as exc:
-            console.print(f"[red]{exc}[/red]")
-            raise typer.Exit(1)
-        console.print(f"[green]MCP Service started in background (pid={pid}) at http://{host}:{port}[/green]")
-        return
-
-    from mmrpg_nai.mcp.service import app as fastapi_app, init_app
-
     cfg = _get_store(data_dir).load_config()
     llm_cfg = cfg.llm.resolved(os.environ)
     token_env = llm_cfg.api_key_env
@@ -1820,6 +1809,17 @@ def serve(
             f"[yellow]{token_env} is not set for provider '{llm_cfg.provider}'; "
             "web chat requests will fail until it is configured.[/yellow]"
         )
+
+    if background:
+        try:
+            pid = _spawn_background_mcp_service(host, port, data_dir)
+        except RuntimeError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[green]MCP Service started in background (pid={pid}) at http://{host}:{port}[/green]")
+        return
+
+    from mmrpg_nai.mcp.service import app as fastapi_app, init_app
 
     init_app(data_dir)
     console.print(f"[bold]MCP Service running at http://{host}:{port}[/bold]")
