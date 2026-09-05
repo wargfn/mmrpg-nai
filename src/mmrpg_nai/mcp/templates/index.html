@@ -389,8 +389,10 @@
       if (data.start_prompt) {
         appendLine("Next Session Start", data.start_prompt, "sys");
       }
+      activeSessionId = null;
+      activeLabel.textContent = "No active session.";
       await loadActiveSessions();
-      await fetchSessionState(false);
+      await loadBootstrap();
     }
 
     async function listUsers() {

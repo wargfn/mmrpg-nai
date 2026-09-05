@@ -558,6 +558,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                         or normalized.startswith("session start")
                         or normalized.startswith("session new")
                     )
+                    needs_detach = normalized.startswith("session end")
                     previous_active = self.active_session_id
                     if needs_activation and new_session_id:
                         try:
@@ -577,6 +578,9 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             await message.reply(f"Could not attach session {new_session_id}: {exc}")
                             return
                     else:
+                        if needs_detach and previous_active:
+                            self._pending_narrator_echo.pop(previous_active, None)
+                            self._session_log_cursor.pop(previous_active, None)
                         self.active_session_id = new_session_id
                         if previous_active and previous_active != self.active_session_id:
                             self._pending_narrator_echo.pop(previous_active, None)
