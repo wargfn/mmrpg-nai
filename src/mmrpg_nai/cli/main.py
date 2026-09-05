@@ -443,7 +443,7 @@ def config_models(
     console.print(table)
     console.print(
         f"\n[dim]Detected provider: [bold]{llm_cfg.provider}[/bold] • Active model: [bold]{llm_cfg.model}[/bold]\n"
-        f"Change with: mmrpg-nai config set llm.provider_settings.{llm_cfg.provider}.model <id>[/dim]"
+        f"Change with: mmrpg-nai config provider model <id>[/dim]"
     )
 
 

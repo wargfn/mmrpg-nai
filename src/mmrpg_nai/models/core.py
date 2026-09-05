@@ -350,6 +350,8 @@ class LLMConfig(BaseModel):
         else:
             detected = self.detect_provider(env_map)
             target_provider = detected or self.provider
+        if target_provider == self.provider:
+            return self
         selected = self.provider_settings.get(target_provider)
         if not selected:
             return self

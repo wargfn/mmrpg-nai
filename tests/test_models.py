@@ -159,6 +159,19 @@ def test_llm_config_prefers_selected_provider_when_its_key_is_set():
     assert resolved.api_key_env == "GITHUB_TOKEN"
 
 
+def test_llm_config_preserves_top_level_overrides_for_selected_provider():
+    cfg = LLMConfig(
+        provider="openai",
+        model="custom-model",
+        api_base="https://custom.example/v1",
+        api_key_env="OPENAI_API_KEY",
+    )
+    resolved = cfg.resolved({"OPENAI_API_KEY": "sk-test"})
+    assert resolved.provider == "openai"
+    assert resolved.model == "custom-model"
+    assert resolved.api_base == "https://custom.example/v1"
+
+
 def test_source_material():
     sm = SourceMaterial(title="Core Rulebook", file_path="/tmp/core.pdf", page_count=300)
     assert sm.title == "Core Rulebook"
