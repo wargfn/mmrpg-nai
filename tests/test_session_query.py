@@ -112,3 +112,32 @@ def test_session_query_with_session_context(tmp_path: Path):
 
     assert result.exit_code == 0, result.output
     assert "focus checked" in result.output
+
+
+def test_session_query_rejects_character_outside_context(tmp_path: Path):
+    store = Store(tmp_path)
+    campaign = Campaign(name="Rules Campaign")
+    in_campaign = Character(name="Hero", alias="H")
+    out_of_campaign = Character(name="Other", alias="O")
+    store.characters.save(in_campaign)
+    store.characters.save(out_of_campaign)
+    campaign.character_ids.append(in_campaign.id)
+    store.campaigns.save(campaign)
+
+    result = runner.invoke(
+        app,
+        [
+            "session",
+            "query",
+            "Who is in context?",
+            "--campaign-id",
+            campaign.id,
+            "--character-ids",
+            out_of_campaign.id,
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "not in the selected session/campaign context" in result.output

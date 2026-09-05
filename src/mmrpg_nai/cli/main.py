@@ -1334,10 +1334,14 @@ def session_query(
 
     party: list[Character] = []
     requested_ids = [part.strip() for part in character_ids.split(",") if part.strip()]
+    allowed_ids = set(session.participants or campaign.character_ids)
     if requested_ids:
         seen_char_ids: set[str] = set()
         for rid in requested_ids:
             ch = _load_by_prefix_or_exact(store.characters, rid, "Character")
+            if allowed_ids and ch.id not in allowed_ids:
+                console.print(f"[red]Character {ch.id[:8]} is not in the selected session/campaign context.[/red]")
+                raise typer.Exit(1)
             if ch.id not in seen_char_ids:
                 party.append(ch)
                 seen_char_ids.add(ch.id)
@@ -1460,8 +1464,6 @@ def session_attach(
         state = _mcp_get_json(mcp_base_url, f"/web/session/{selected_id}")
         listed = _mcp_session_listed_active(mcp_base_url, selected_id)
         is_active = bool(state.get("is_active"))
-        if listed and not is_active:
-            is_active = True
         if is_active and not listed:
             raise RuntimeError("Session reports active but is not listed in active sessions.")
         if not listed:
