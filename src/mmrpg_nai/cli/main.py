@@ -126,6 +126,12 @@ def _mcp_post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[st
         raise RuntimeError(f"Could not reach MCP service at {base_url}: {exc}") from exc
 
 
+def _mcp_session_listed_active(base_url: str, session_id: str) -> bool:
+    active = _mcp_get_json(base_url, "/web/active-sessions")
+    sessions = active.get("sessions", []) if isinstance(active, dict) else []
+    return any(str(s.get("id", "")).strip() == session_id for s in sessions)
+
+
 def _spawn_background_mcp_service(host: str, port: int, data_dir: str) -> int:
     cmd = [
         sys.executable,
@@ -1452,7 +1458,8 @@ def session_attach(
     selected_id = str(selected.get("id", ""))
     try:
         state = _mcp_get_json(mcp_base_url, f"/web/session/{selected_id}")
-        if not bool(state.get("is_active")):
+        listed = _mcp_session_listed_active(mcp_base_url, selected_id)
+        if (not bool(state.get("is_active"))) or (not listed):
             resumed = _mcp_post_json(mcp_base_url, "/web/session/start", {"session_id": selected_id})
             resumed_session = resumed.get("session") or {}
             if isinstance(resumed_session, dict):
@@ -1463,6 +1470,8 @@ def session_attach(
                 if resumed_campaign_id:
                     selected["campaign_id"] = resumed_campaign_id
             selected_id = str(selected.get("id", selected_id))
+            if not _mcp_session_listed_active(mcp_base_url, selected_id):
+                raise RuntimeError("Session could not be confirmed in active sessions after resume.")
     except Exception as exc:
         console.print(Panel(str(exc), title="[bold red]⚠ MCP session error[/bold red]", border_style="red"))
         raise typer.Exit(1)

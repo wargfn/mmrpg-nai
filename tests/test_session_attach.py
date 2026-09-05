@@ -72,9 +72,12 @@ def test_session_attach_chats_with_active_session():
 def test_session_attach_can_resume_inactive_session_by_id():
     base_session_id = "session-old1234"
     resumed_session_id = "session-new5678"
+    resumed = {"done": False}
 
     def _urlopen(req, timeout=15):
         if req.full_url.endswith("/web/active-sessions"):
+            if resumed["done"]:
+                return _FakeHTTPResponse({"sessions": [{"id": resumed_session_id}]})
             return _FakeHTTPResponse({"sessions": []})
         if req.full_url.endswith("/web/bootstrap"):
             return _FakeHTTPResponse(
@@ -92,6 +95,7 @@ def test_session_attach_can_resume_inactive_session_by_id():
         if req.full_url.endswith(f"/web/session/{base_session_id}") and req.method == "GET":
             return _FakeHTTPResponse({"is_active": False})
         if req.full_url.endswith("/web/session/start") and req.method == "POST":
+            resumed["done"] = True
             return _FakeHTTPResponse(
                 {
                     "session": {
