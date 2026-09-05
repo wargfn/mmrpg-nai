@@ -159,6 +159,19 @@ def test_llm_config_prefers_selected_provider_when_its_key_is_set():
     assert resolved.api_key_env == "GITHUB_TOKEN"
 
 
+def test_llm_config_detect_provider_honors_empty_env_mapping(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    cfg = LLMConfig()
+    assert cfg.detect_provider({}) is None
+
+
+def test_llm_config_resolved_honors_empty_env_mapping(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    cfg = LLMConfig(provider="github_copilot")
+    resolved = cfg.resolved({})
+    assert resolved.provider == "github_copilot"
+
+
 def test_llm_config_reconciles_selected_provider_top_level_fields():
     cfg = LLMConfig(
         provider="openai",

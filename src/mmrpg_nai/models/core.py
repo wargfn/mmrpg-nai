@@ -325,7 +325,7 @@ class LLMConfig(BaseModel):
         return self
 
     def detect_provider(self, env: Mapping[str, str] | None = None) -> str | None:
-        env_map = env or os.environ
+        env_map = env if env is not None else os.environ
         detection_order = [
             "google_ai_studio",
             "openai",
@@ -344,7 +344,7 @@ class LLMConfig(BaseModel):
         managed_envs = {ps.api_key_env for ps in self.provider_settings.values()}
         if self.api_key_env not in managed_envs:
             return self
-        env_map = env or os.environ
+        env_map = env if env is not None else os.environ
         configured = self.provider_settings.get(self.provider)
         if configured and (env_map.get(configured.api_key_env) or "").strip():
             target_provider = self.provider
