@@ -394,10 +394,8 @@ def web_session_end(session_id: str) -> WebSessionEndResponse:
         except Exception:
             summary, start_prompt = "", ""
 
-    if summary:
-        session.synopsis = summary
-    if start_prompt:
-        session.start_prompt = start_prompt
+    session.synopsis = summary
+    session.start_prompt = start_prompt
     store.sessions.save(session)
     if narrator is not None and campaign is not None:
         try:

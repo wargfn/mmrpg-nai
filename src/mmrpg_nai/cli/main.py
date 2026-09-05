@@ -1334,7 +1334,7 @@ def session_query(
 
     party: list[Character] = []
     requested_ids = [part.strip() for part in character_ids.split(",") if part.strip()]
-    allowed_ids = set(session.participants or campaign.character_ids)
+    allowed_ids = set(session.participants) if session_id else set(campaign.character_ids)
     if requested_ids:
         seen_char_ids: set[str] = set()
         for rid in requested_ids:
