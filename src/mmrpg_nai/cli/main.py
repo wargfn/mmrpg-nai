@@ -1052,20 +1052,26 @@ def session_run(
                 if raw_chars.strip().lower() in {"", "all"}:
                     party = pc_pool
                     break
+                created_chars: list[Character] = []
                 selected: list[Character] = []
+                selector_tokens: list[str] = []
                 for token in raw_chars.split(","):
                     token = token.strip()
                     lowered = token.lower()
                     if lowered in {"new", "create"}:
                         created = _create_character_for_session(store, allow_unnamed=True)
-                        selected.append(created)
+                        created_chars.append(created)
                         pc_pool.append(created)
                         continue
                     if lowered in {"unnamed", "anon", "anonymous"}:
                         created = _create_unnamed_character_for_session(store)
-                        selected.append(created)
+                        created_chars.append(created)
                         pc_pool.append(created)
                         continue
+                    selector_tokens.append(token)
+
+                selected.extend(created_chars)
+                for token in selector_tokens:
                     if token.isdigit():
                         idx = int(token) - 1
                         if 0 <= idx < len(pc_pool):
