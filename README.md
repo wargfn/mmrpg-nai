@@ -702,11 +702,14 @@ If the session is no longer active in MCP memory, the bridge can auto-resume it 
 by creating a follow-up active session via `/web/session/start`.
 
 If no session is set, control the bridge from Discord with commands:
+- `/campaign list`
 - `/campaign new <name>`
 - `/session start [campaign-id-or-prefix] [title]`
 - `/session use <session-id>`
 - `/session status`
 - `/help`
+
+The bridge also accepts CLI-style prefixed commands like `/mmrpg-nai campaign list`.
 
 | Option | Default | Description |
 |---|---|---|
