@@ -137,7 +137,7 @@ def test_mcp_client_ensure_active_session_raises_when_not_listed_after_resume():
         raise AssertionError(f"Unexpected URL: {req.full_url}")
 
     with patch("urllib.request.urlopen", side_effect=_urlopen):
-        with pytest.raises(MCPBridgeError, match="could not be confirmed"):
+        with pytest.raises(MCPBridgeError, match="reports active but is not listed"):
             client.ensure_active_session("sid", resume_if_inactive=True)
 
 

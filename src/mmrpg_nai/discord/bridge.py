@@ -107,6 +107,8 @@ class MCPWebClient:
         listed = self.is_session_listed_active(session_id)
         if is_active and listed:
             return session_id, False
+        if is_active and not listed:
+            raise MCPBridgeError("Session reports active but is not listed in MCP web active sessions.")
         if not resume_if_inactive:
             if not listed:
                 raise MCPBridgeError("Session is not listed as active in MCP web active sessions.")
