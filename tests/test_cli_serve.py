@@ -27,3 +27,11 @@ def test_serve_background_spawns_service():
     assert result.exit_code == 0, result.output
     spawn.assert_called_once_with("0.0.0.0", 9000, "/tmp/mmrpg-data")
     assert "MCP Service started in background (pid=4321)" in result.output
+
+
+def test_serve_background_reports_startup_failure():
+    with patch("mmrpg_nai.cli.main._spawn_background_mcp_service", side_effect=RuntimeError("failed to start")):
+        result = runner.invoke(app, ["serve", "--background"])
+
+    assert result.exit_code != 0
+    assert "failed to start" in result.output

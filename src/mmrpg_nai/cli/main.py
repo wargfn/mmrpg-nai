@@ -124,10 +124,20 @@ def _spawn_background_mcp_service(host: str, port: int, data_dir: str) -> int:
         cmd,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         start_new_session=True,
     )
-    return int(proc.pid)
+    try:
+        proc.wait(timeout=0.75)
+    except subprocess.TimeoutExpired:
+        return int(proc.pid)
+    stderr = ""
+    if proc.stderr is not None:
+        stderr = proc.stderr.read().decode("utf-8", errors="replace").strip()
+    detail = f" (exit code {proc.returncode})"
+    if stderr:
+        detail += f": {stderr}"
+    raise RuntimeError(f"Background MCP service failed to start{detail}")
 
 
 def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
@@ -403,7 +413,8 @@ def config_models(
                 f"Environment variable [bold]{llm_cfg.api_key_env!r}[/bold] is not set.\n"
                 f"  1. Detected provider: [bold]{llm_cfg.provider}[/bold]\n"
                 f"  2. Export a key/token: [bold]export {llm_cfg.api_key_env}=...[/bold]\n"
-                "  3. Or update llm.provider_settings in config.json",
+                "  3. Select a provider: [bold]mmrpg-nai config provider select <provider>[/bold]\n"
+                "  4. Set model for that provider: [bold]mmrpg-nai config provider model <provider> <model-id>[/bold]",
                 title="[bold red]⚠ Token not set[/bold red]",
                 border_style="red",
             )
@@ -1046,10 +1057,14 @@ def session_run(
                     token = token.strip()
                     lowered = token.lower()
                     if lowered in {"new", "create"}:
-                        selected.append(_create_character_for_session(store, allow_unnamed=True))
+                        created = _create_character_for_session(store, allow_unnamed=True)
+                        selected.append(created)
+                        pc_pool.append(created)
                         continue
                     if lowered in {"unnamed", "anon", "anonymous"}:
-                        selected.append(_create_unnamed_character_for_session(store))
+                        created = _create_unnamed_character_for_session(store)
+                        selected.append(created)
+                        pc_pool.append(created)
                         continue
                     if token.isdigit():
                         idx = int(token) - 1
@@ -1778,7 +1793,11 @@ def serve(
         raise typer.Exit(1)
 
     if background:
-        pid = _spawn_background_mcp_service(host, port, data_dir)
+        try:
+            pid = _spawn_background_mcp_service(host, port, data_dir)
+        except RuntimeError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
         console.print(f"[green]MCP Service started in background (pid={pid}) at http://{host}:{port}[/green]")
         return
 

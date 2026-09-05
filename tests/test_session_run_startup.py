@@ -144,3 +144,38 @@ def test_session_run_reprompts_on_invalid_character_selection(tmp_path: Path):
     sessions = saved.sessions.list_all()
     assert len(sessions) == 1
     assert sessions[0].participants == [existing_char.id]
+
+
+def test_session_run_can_reselect_new_character_in_same_prompt(tmp_path: Path):
+    store = Store(tmp_path)
+    campaign = Campaign(name="Create and Reselect Campaign")
+    store.campaigns.save(campaign)
+    existing_char = Character(name="Iron Man", alias="Tony", is_npc=False)
+    store.characters.save(existing_char)
+    existing_user = User(first_name="Tony")
+    store.users.save(existing_user)
+
+    prompts = [
+        "1",              # campaign selection
+        "new,2",          # create + select created character by new index in same prompt
+        "War Machine",    # character name
+        "Rhodey",         # alias
+        "",               # background
+        "",               # users: accept default
+        "",               # session title (accept default)
+        "quit",           # immediate exit from play loop
+    ]
+
+    with patch("mmrpg_nai.llm.narrator.Narrator", _FakeNarrator):
+        with patch("mmrpg_nai.cli.main.Prompt.ask", side_effect=prompts):
+            result = runner.invoke(app, ["session", "run", "--no-stream", "--data-dir", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+
+    saved = Store(tmp_path)
+    sessions = saved.sessions.list_all()
+    assert len(sessions) == 1
+    assert len(sessions[0].participants) == 1
+    selected = saved.characters.load(sessions[0].participants[0])
+    assert selected is not None
+    assert selected.name == "War Machine"
