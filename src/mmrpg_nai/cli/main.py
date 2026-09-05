@@ -1391,21 +1391,36 @@ def session_attach(
                 raise typer.Exit(1)
         if selected is None:
             try:
-                bootstrap = _mcp_get_json(mcp_base_url, "/web/bootstrap")
-            except Exception as exc:
-                console.print(Panel(str(exc), title="[bold red]⚠ MCP connection error[/bold red]", border_style="red"))
-                raise typer.Exit(1)
-            all_sessions = bootstrap.get("sessions", []) if isinstance(bootstrap, dict) else []
-            exact_any = next((s for s in all_sessions if s.get("id") == session_id), None)
-            if exact_any is not None:
-                selected = exact_any
+                state_direct = _mcp_get_json(mcp_base_url, f"/web/session/{session_id}")
+            except Exception:
+                state_direct = None
+            if isinstance(state_direct, dict) and state_direct.get("session"):
+                selected = state_direct.get("session")
+                campaign_from_state = state_direct.get("campaign") or {}
+                campaign_id = str(campaign_from_state.get("id", "")).strip()
+                if campaign_id and isinstance(selected, dict):
+                    selected.setdefault("campaign_id", campaign_id)
+                    selected.setdefault("title", str(selected.get("title", "")))
+                    selected.setdefault("user_ids", selected.get("user_ids", []))
+            if selected is not None:
+                pass
             else:
-                matches_any = [s for s in all_sessions if str(s.get("id", "")).startswith(session_id)]
-                if len(matches_any) == 1:
-                    selected = matches_any[0]
-                elif len(matches_any) > 1:
-                    console.print("[red]Session prefix matches multiple sessions; be more specific.[/red]")
+                try:
+                    bootstrap = _mcp_get_json(mcp_base_url, "/web/bootstrap")
+                except Exception as exc:
+                    console.print(Panel(str(exc), title="[bold red]⚠ MCP connection error[/bold red]", border_style="red"))
                     raise typer.Exit(1)
+                all_sessions = bootstrap.get("sessions", []) if isinstance(bootstrap, dict) else []
+                exact_any = next((s for s in all_sessions if s.get("id") == session_id), None)
+                if exact_any is not None:
+                    selected = exact_any
+                else:
+                    matches_any = [s for s in all_sessions if str(s.get("id", "")).startswith(session_id)]
+                    if len(matches_any) == 1:
+                        selected = matches_any[0]
+                    elif len(matches_any) > 1:
+                        console.print("[red]Session prefix matches multiple sessions; be more specific.[/red]")
+                        raise typer.Exit(1)
     else:
         table = Table("#", "Session ID", "Campaign ID", "Title", "Players")
         for i, s in enumerate(sessions, 1):

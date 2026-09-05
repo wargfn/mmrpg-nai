@@ -320,6 +320,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
             self.last_campaign_id: str | None = None
             self._session_log_cursor: dict[str, int] = {}
             self._relay_task: asyncio.Task[None] | None = None
+            self._relay_lock = asyncio.Lock()
 
         async def _sync_session_cursor(self, session_id: str) -> None:
             state = await asyncio.to_thread(mcp.get_session_state, session_id)
@@ -337,7 +338,8 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     await asyncio.sleep(1.0)
                     continue
                 try:
-                    state = await asyncio.to_thread(mcp.get_session_state, session_id)
+                    async with self._relay_lock:
+                        state = await asyncio.to_thread(mcp.get_session_state, session_id)
                 except Exception:
                     await asyncio.sleep(2.0)
                     continue
@@ -357,16 +359,17 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                 if len(log) > last_seen:
                     channel = self.get_channel(settings.channel_id)
                     if channel is not None:
-                        for entry in log[last_seen:]:
-                            if not isinstance(entry, dict):
-                                continue
-                            if str(entry.get("role", "")).strip().lower() == "player":
-                                continue
-                            rendered = _format_session_log_entry(entry)
-                            if not rendered:
-                                continue
-                            for chunk in split_discord_message(rendered):
-                                await channel.send(chunk)
+                        async with self._relay_lock:
+                            for entry in log[last_seen:]:
+                                if not isinstance(entry, dict):
+                                    continue
+                                if str(entry.get("role", "")).strip().lower() == "player":
+                                    continue
+                                rendered = _format_session_log_entry(entry)
+                                if not rendered:
+                                    continue
+                                for chunk in split_discord_message(rendered):
+                                    await channel.send(chunk)
                     self._session_log_cursor[session_id] = len(log)
                 await asyncio.sleep(1.0)
 
@@ -387,12 +390,26 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     await self._sync_session_cursor(self.active_session_id)
                 except Exception as exc:
                     print(f"Discord bridge could not validate active session {self.active_session_id}: {exc}")
-            if self._relay_task is None or self._relay_task.done():
-                self._relay_task = asyncio.create_task(self._relay_active_session_updates())
+            if self._relay_task is not None and not self._relay_task.done():
+                self._relay_task.cancel()
+                try:
+                    await self._relay_task
+                except asyncio.CancelledError:
+                    pass
+            self._relay_task = asyncio.create_task(self._relay_active_session_updates())
             print(
                 f"Discord bridge connected as {self.user} "
                 f"(channel={settings.channel_id}, session={self.active_session_id or 'none'})"
             )
+
+        async def close(self) -> None:
+            if self._relay_task is not None and not self._relay_task.done():
+                self._relay_task.cancel()
+                try:
+                    await self._relay_task
+                except asyncio.CancelledError:
+                    pass
+            await super().close()
 
         async def on_message(self, message: "discord.Message") -> None:
             if message.author == self.user or message.author.bot:
@@ -458,14 +475,16 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
 
             async with message.channel.typing():
                 try:
-                    response, mode = await asyncio.to_thread(mcp.chat, self.active_session_id, text)
+                    async with self._relay_lock:
+                        response, mode = await asyncio.to_thread(mcp.chat, self.active_session_id, text)
                 except MCPSessionInactiveError:
                     if not settings.resume_if_inactive:
                         await message.reply("Session is not active. Start/resume it in MCP first.")
                         return
                     try:
-                        self.active_session_id = await asyncio.to_thread(mcp.resume, self.active_session_id)
-                        response, mode = await asyncio.to_thread(mcp.chat, self.active_session_id, text)
+                        async with self._relay_lock:
+                            self.active_session_id = await asyncio.to_thread(mcp.resume, self.active_session_id)
+                            response, mode = await asyncio.to_thread(mcp.chat, self.active_session_id, text)
                     except Exception as exc:
                         await message.reply(f"Could not resume session: {exc}")
                         return
