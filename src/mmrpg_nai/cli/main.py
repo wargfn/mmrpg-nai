@@ -1457,6 +1457,11 @@ def session_attach(
             resumed_session = resumed.get("session") or {}
             if isinstance(resumed_session, dict):
                 selected = {**selected, **resumed_session}
+            resumed_campaign = resumed.get("campaign") or {}
+            if isinstance(resumed_campaign, dict):
+                resumed_campaign_id = str(resumed_campaign.get("id", "")).strip()
+                if resumed_campaign_id:
+                    selected["campaign_id"] = resumed_campaign_id
             selected_id = str(selected.get("id", selected_id))
     except Exception as exc:
         console.print(Panel(str(exc), title="[bold red]⚠ MCP session error[/bold red]", border_style="red"))
