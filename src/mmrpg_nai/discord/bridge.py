@@ -308,8 +308,11 @@ def process_bridge_command(
                 state = mcp.get_session_state(active_session_id)
                 session = state.get("session") or {}
                 target_session_id = str(session.get("id", "")).strip() or active_session_id
-            except MCPBridgeError:
-                target_session_id = active_session_id
+            except MCPBridgeError as exc:
+                if str(exc).startswith("HTTP 404:"):
+                    target_session_id = active_session_id
+                else:
+                    raise
             ended = mcp.end_session(target_session_id)
             if bool(ended.get("ended")):
                 return True, f"Ended and detached from session {target_session_id}.", None, last_campaign_id
