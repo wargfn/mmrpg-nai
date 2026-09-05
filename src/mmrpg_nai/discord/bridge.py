@@ -393,6 +393,9 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     if resumed:
                         previous = self.active_session_id
                         self.active_session_id = ensured_session_id
+                        if previous and previous != ensured_session_id:
+                            self._pending_narrator_echo.pop(previous, None)
+                            self._session_log_cursor.pop(previous, None)
                         print(f"Discord bridge resumed session {previous} -> {ensured_session_id}")
                     else:
                         self.active_session_id = ensured_session_id
@@ -452,6 +455,8 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     normalized = text[1:].strip().lower()
                     if normalized.startswith("mmrpg-nai "):
                         normalized = normalized[len("mmrpg-nai "):]
+                    elif normalized.startswith("mmrpg_nai "):
+                        normalized = normalized[len("mmrpg_nai "):]
                     needs_activation = (
                         normalized.startswith("session use")
                         or normalized.startswith("session start")
@@ -465,7 +470,11 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                                     new_session_id,
                                     settings.resume_if_inactive,
                                 )
+                                previous_active = self.active_session_id
                                 self.active_session_id = ensured_session_id
+                                if resumed and previous_active and previous_active != ensured_session_id:
+                                    self._pending_narrator_echo.pop(previous_active, None)
+                                    self._session_log_cursor.pop(previous_active, None)
                                 await self._sync_session_cursor(ensured_session_id, initialize=True)
                                 if resumed:
                                     reply = f"{reply}\nResumed and attached to session {ensured_session_id}."
