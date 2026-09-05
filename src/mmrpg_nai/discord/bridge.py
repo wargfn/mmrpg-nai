@@ -133,6 +133,8 @@ def process_bridge_command(
         parts = shlex.split(text[1:].strip())
     except ValueError:
         return True, "Malformed command syntax. Check quotes and try again.", active_session_id, last_campaign_id
+    if parts and parts[0].lower() in {"mmrpg-nai", "mmrpg_nai"}:
+        parts = parts[1:]
     if not parts:
         return True, "Use /help for available commands.", active_session_id, last_campaign_id
 
@@ -142,6 +144,7 @@ def process_bridge_command(
             True,
             (
                 "Commands:\n"
+                "• /campaign list\n"
                 "• /campaign new <name>\n"
                 "• /session start [campaign-id-or-prefix] [title]\n"
                 "• /session use <session-id>\n"
@@ -151,20 +154,37 @@ def process_bridge_command(
             last_campaign_id,
         )
 
-    if cmd == "campaign" and len(parts) >= 3 and parts[1].lower() in {"new", "create"}:
-        name = " ".join(parts[2:]).strip()
-        if not name:
-            return True, "Usage: /campaign new <name>", active_session_id, last_campaign_id
-        campaign = mcp.create_campaign(name)
-        campaign_id = str(campaign.get("id", "")).strip()
-        if not campaign_id:
-            return True, "Campaign created but response did not include an id.", active_session_id, last_campaign_id
-        return (
-            True,
-            f"Created campaign '{campaign.get('name', name)}' ({campaign_id}). Now run /session start {campaign_id}",
-            active_session_id,
-            campaign_id,
-        )
+    if cmd == "campaign":
+        if len(parts) < 2:
+            return True, "Usage: /campaign list|new ...", active_session_id, last_campaign_id
+        action = parts[1].lower()
+        if action == "list":
+            campaigns = mcp.list_campaigns()
+            if not campaigns:
+                return True, "No campaigns found.", active_session_id, last_campaign_id
+            lines: list[str] = ["Campaigns:"]
+            for c in campaigns[:20]:
+                cid = str(c.get("id", ""))[:8]
+                name = str(c.get("name", ""))
+                lines.append(f"• {cid}  {name}")
+            if len(campaigns) > 20:
+                lines.append(f"…and {len(campaigns) - 20} more")
+            return True, "\n".join(lines), active_session_id, last_campaign_id
+        if action in {"new", "create"} and len(parts) >= 3:
+            name = " ".join(parts[2:]).strip()
+            if not name:
+                return True, "Usage: /campaign new <name>", active_session_id, last_campaign_id
+            campaign = mcp.create_campaign(name)
+            campaign_id = str(campaign.get("id", "")).strip()
+            if not campaign_id:
+                return True, "Campaign created but response did not include an id.", active_session_id, last_campaign_id
+            return (
+                True,
+                f"Created campaign '{campaign.get('name', name)}' ({campaign_id}). Now run /session start {campaign_id}",
+                active_session_id,
+                campaign_id,
+            )
+        return True, "Usage: /campaign list or /campaign new <name>", active_session_id, last_campaign_id
 
     if cmd == "session":
         if len(parts) < 2:

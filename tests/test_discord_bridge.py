@@ -172,3 +172,43 @@ def test_process_bridge_command_session_start_updates_canonical_campaign_id():
     assert "Started session" in (reply or "")
     assert active == "sess-1"
     assert campaign == "camp-1-full"
+
+
+def test_process_bridge_command_campaign_list():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/campaigns"):
+            return _FakeHTTPResponse(
+                [
+                    {"id": "camp-11111111", "name": "Alpha"},
+                    {"id": "camp-22222222", "name": "Beta"},
+                ]
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/campaign list", client, None, None)
+
+    assert handled is True
+    assert "Campaigns:" in (reply or "")
+    assert "Alpha" in (reply or "")
+    assert "Beta" in (reply or "")
+    assert active is None
+    assert campaign is None
+
+
+def test_process_bridge_command_prefixed_cli_style_campaign_list():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/campaigns"):
+            return _FakeHTTPResponse([{"id": "camp-11111111", "name": "Alpha"}])
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, _, _ = process_bridge_command("/mmrpg-nai campaign list", client, None, None)
+
+    assert handled is True
+    assert "Campaigns:" in (reply or "")
+    assert "Alpha" in (reply or "")
