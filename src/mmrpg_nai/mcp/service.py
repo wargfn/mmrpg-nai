@@ -402,9 +402,11 @@ def web_session_end(session_id: str) -> WebSessionEndResponse:
     if narrator is not None and campaign is not None:
         try:
             completed_sessions = [s for s in store.sessions.find(campaign_id=campaign.id) if s.ended_at is not None]
-            campaign_progress = narrator.summarise_campaign_progress(campaign, completed_sessions)
-            campaign.campaign_progress = campaign_progress
-            store.campaigns.save(campaign)
+            progress_update = narrator.summarise_campaign_progress(campaign, completed_sessions).strip()
+            if progress_update:
+                campaign_progress = progress_update
+                campaign.campaign_progress = progress_update
+                store.campaigns.save(campaign)
         except Exception:
             campaign_progress = ""
     return WebSessionEndResponse(
