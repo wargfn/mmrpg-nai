@@ -559,7 +559,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     else:
                         self.active_session_id = ensured_session_id
                     await self._sync_session_cursor(self.active_session_id)
-                    await self._capture_session_clear_boundary()
+                    self._session_clear_boundary = None
                 except Exception as exc:
                     print(f"Discord bridge could not validate active session {self.active_session_id}: {exc}")
             if self._relay_task is not None and not self._relay_task.done():
