@@ -712,6 +712,8 @@ mmrpg-nai serve-discord --session-id <session-id> --channel-id <discord-channel-
 
 If the session is no longer active in MCP memory, the bridge can auto-resume it (default enabled)
 by creating a follow-up active session via `/web/session/start`.
+When `--session-id` is provided, this active-session check/resume also runs at bridge startup so
+the session appears under active sessions in the web interface immediately.
 
 If no session is set, control the bridge from Discord with commands:
 - `/campaign list`

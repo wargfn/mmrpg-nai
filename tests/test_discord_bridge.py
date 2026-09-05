@@ -83,6 +83,38 @@ def test_mcp_client_chat_timeout_error():
             client.chat("sid", "hello")
 
 
+def test_mcp_client_ensure_active_session_already_active():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/sid"):
+            return _FakeHTTPResponse({"is_active": True})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        sid, resumed = client.ensure_active_session("sid", resume_if_inactive=True)
+
+    assert sid == "sid"
+    assert resumed is False
+
+
+def test_mcp_client_ensure_active_session_resumes_when_inactive():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/sid") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": False})
+        if req.full_url.endswith("/web/session/start"):
+            return _FakeHTTPResponse({"session": {"id": "sid-2"}})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        sid, resumed = client.ensure_active_session("sid", resume_if_inactive=True)
+
+    assert sid == "sid-2"
+    assert resumed is True
+
+
 def test_mcp_client_create_campaign_and_start_session():
     client = MCPWebClient("http://localhost:8000")
     calls = []

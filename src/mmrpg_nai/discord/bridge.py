@@ -97,6 +97,14 @@ class MCPWebClient:
             payload["title"] = title
         return self._post("/web/session/start", payload)
 
+    def ensure_active_session(self, session_id: str, resume_if_inactive: bool = True) -> tuple[str, bool]:
+        state = self._get(f"/web/session/{session_id}")
+        if bool(state.get("is_active")):
+            return session_id, False
+        if not resume_if_inactive:
+            return session_id, False
+        return self.resume(session_id), True
+
 
 def split_discord_message(text: str, limit: int = 1800) -> list[str]:
     if len(text) <= limit:
@@ -288,6 +296,21 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
             self.last_campaign_id: str | None = None
 
         async def on_ready(self) -> None:
+            if self.active_session_id:
+                try:
+                    ensured_session_id, resumed = await asyncio.to_thread(
+                        mcp.ensure_active_session,
+                        self.active_session_id,
+                        settings.resume_if_inactive,
+                    )
+                    if resumed:
+                        previous = self.active_session_id
+                        self.active_session_id = ensured_session_id
+                        print(f"Discord bridge resumed session {previous} -> {ensured_session_id}")
+                    else:
+                        self.active_session_id = ensured_session_id
+                except Exception as exc:
+                    print(f"Discord bridge could not validate active session {self.active_session_id}: {exc}")
             print(
                 f"Discord bridge connected as {self.user} "
                 f"(channel={settings.channel_id}, session={self.active_session_id or 'none'})"
