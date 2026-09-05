@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -102,6 +104,30 @@ def _mcp_post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[st
         raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
     except urlerror.URLError as exc:
         raise RuntimeError(f"Could not reach MCP service at {base_url}: {exc}") from exc
+
+
+def _spawn_background_mcp_service(host: str, port: int, data_dir: str) -> int:
+    cmd = [
+        sys.executable,
+        "-m",
+        "mmrpg_nai.cli.main",
+        "serve",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--data-dir",
+        data_dir,
+        "--foreground",
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return int(proc.pid)
 
 
 def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
@@ -1738,6 +1764,11 @@ def serve(
     host: str = typer.Option("127.0.0.1", help="Bind host"),
     port: int = typer.Option(8000, help="Bind port"),
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+    background: bool = typer.Option(
+        False,
+        "--background/--foreground",
+        help="Run as a detached background process",
+    ),
 ) -> None:
     """Start the MCP REST service."""
     try:
@@ -1745,6 +1776,11 @@ def serve(
     except ImportError:
         console.print("[red]uvicorn is required: pip install uvicorn[/red]")
         raise typer.Exit(1)
+
+    if background:
+        pid = _spawn_background_mcp_service(host, port, data_dir)
+        console.print(f"[green]MCP Service started in background (pid={pid}) at http://{host}:{port}[/green]")
+        return
 
     from mmrpg_nai.mcp.service import app as fastapi_app, init_app
 

@@ -670,12 +670,16 @@ mmrpg-nai serve
 
 # Custom host/port
 mmrpg-nai serve --host 0.0.0.0 --port 9000
+
+# Run as background service
+mmrpg-nai serve --background
 ```
 
 | Option | Default | Description |
 |---|---|---|
 | `--host` | `127.0.0.1` | Bind host |
 | `--port` | `8000` | Bind port |
+| `--background/--foreground` | `--foreground` | Run as a detached background process |
 
 **API docs:** `http://127.0.0.1:8000/docs` (Swagger UI)
 
