@@ -1230,8 +1230,8 @@ def session_query(
     """Query the LLM with loaded context for rules, stats, and checks."""
     from mmrpg_nai.llm.narrator import Narrator
 
-    if not campaign_id and not session_id:
-        console.print("[red]Provide either --campaign-id or --session-id.[/red]")
+    if bool(campaign_id) == bool(session_id):
+        console.print("[red]Provide exactly one of --campaign-id or --session-id.[/red]")
         raise typer.Exit(1)
 
     store = _get_store(data_dir)
@@ -1375,7 +1375,7 @@ def session_attach(
 
         mode = str(resp.get("mode", "narrate"))
         output = str(resp.get("response", ""))
-        if _META_RE.match(player_input):
+        if mode == "meta":
             console.print("[bold yellow]Narrator (meta)[/bold yellow]")
         else:
             console.print("[bold blue]Narrator[/bold blue]")

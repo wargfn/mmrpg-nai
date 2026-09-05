@@ -33,7 +33,32 @@ def test_session_query_requires_campaign_or_session(tmp_path: Path):
         ["session", "query", "How does melee work?", "--data-dir", str(tmp_path)],
     )
     assert result.exit_code != 0
-    assert "Provide either --campaign-id or --session-id" in result.output
+    assert "Provide exactly one of --campaign-id or --session-id" in result.output
+
+
+def test_session_query_rejects_both_campaign_and_session(tmp_path: Path):
+    store = Store(tmp_path)
+    campaign = Campaign(name="Rules Campaign")
+    store.campaigns.save(campaign)
+    session = Session(campaign_id=campaign.id, title="Session 1")
+    store.sessions.save(session)
+
+    result = runner.invoke(
+        app,
+        [
+            "session",
+            "query",
+            "How does melee work?",
+            "--campaign-id",
+            campaign.id,
+            "--session-id",
+            session.id,
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "Provide exactly one of --campaign-id or --session-id" in result.output
 
 
 def test_session_query_with_campaign_context(tmp_path: Path):

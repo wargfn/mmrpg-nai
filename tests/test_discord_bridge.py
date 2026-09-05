@@ -122,3 +122,12 @@ def test_process_bridge_command_campaign_then_start_session():
         assert "Started session" in (reply2 or "")
         assert active2 == "sess-1"
         assert last_campaign2 == "camp-1"
+
+
+def test_process_bridge_command_malformed_quotes():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command('/campaign new "Alpha', client, None, None)
+    assert handled is True
+    assert "Malformed command syntax" in (reply or "")
+    assert active is None
+    assert campaign is None

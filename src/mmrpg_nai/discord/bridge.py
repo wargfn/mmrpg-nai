@@ -129,7 +129,10 @@ def process_bridge_command(
     if not text.startswith("/"):
         return False, None, active_session_id, last_campaign_id
 
-    parts = shlex.split(text[1:].strip())
+    try:
+        parts = shlex.split(text[1:].strip())
+    except ValueError:
+        return True, "Malformed command syntax. Check quotes and try again.", active_session_id, last_campaign_id
     if not parts:
         return True, "Use /help for available commands.", active_session_id, last_campaign_id
 
