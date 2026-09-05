@@ -116,3 +116,38 @@ def test_session_attach_can_resume_inactive_session_by_id():
 
     assert result.exit_code == 0, result.output
     assert "Narrated: hello" in result.output
+
+
+def test_session_attach_errors_when_state_active_but_not_listed():
+    active_session_id = "session-1234abcd"
+    started_called = {"value": False}
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": []})
+        if req.full_url.endswith("/web/bootstrap"):
+            return _FakeHTTPResponse(
+                {
+                    "sessions": [
+                        {
+                            "id": active_session_id,
+                            "campaign_id": "campaign-1",
+                            "title": "Session 1",
+                            "user_ids": [],
+                        }
+                    ]
+                }
+            )
+        if req.full_url.endswith(f"/web/session/{active_session_id}") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": True})
+        if req.full_url.endswith("/web/session/start"):
+            started_called["value"] = True
+            return _FakeHTTPResponse({"session": {"id": active_session_id}})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        result = runner.invoke(app, ["session", "attach", "--session-id", active_session_id])
+
+    assert result.exit_code != 0
+    assert "Session reports active but is not listed in active sessions." in result.output
+    assert started_called["value"] is False

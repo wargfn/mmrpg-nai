@@ -249,10 +249,17 @@ def process_bridge_command(
                 return True, "Usage: /session use <session-id>", active_session_id, last_campaign_id
             session_id = parts[2].strip()
             state = mcp.get_session_state(session_id)
+            session = state.get("session") or {}
+            canonical_session_id = str(session.get("id", "")).strip() or session_id
             campaign = state.get("campaign") or {}
             campaign_id = str(campaign.get("id", "")).strip() or last_campaign_id
             status = "active" if bool(state.get("is_active")) else "inactive"
-            return True, f"Active session set to {session_id} ({status})", session_id, campaign_id
+            return (
+                True,
+                f"Active session set to {canonical_session_id} ({status})",
+                canonical_session_id,
+                campaign_id,
+            )
         if action in {"start", "new"}:
             if len(parts) >= 3:
                 campaign_ref = parts[2].strip()

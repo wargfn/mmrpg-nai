@@ -58,7 +58,8 @@ export $(grep -v '^#' .env | xargs)
 
 Provider selection precedence:
 1. If your selected provider (`config provider select`) has its configured token env var set, that selected provider is used.
-2. Otherwise, provider auto-detection checks each provider profile's configured `llm.provider_settings.<provider>.api_key_env` in this order:
+2. If top-level `llm.api_key_env` is set to a custom env var that is not one of the provider profile env vars, auto-detection is skipped and the selected provider remains in effect.
+3. Otherwise, provider auto-detection checks each provider profile's configured `llm.provider_settings.<provider>.api_key_env` in this order:
    1. `google_ai_studio`
    2. `openai`
    3. `grok`

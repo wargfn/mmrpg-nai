@@ -244,15 +244,21 @@ def test_process_bridge_command_session_use_validates_session_state():
 
     def _urlopen(req, timeout=15):
         if req.full_url.endswith("/web/session/sess-1"):
-            return _FakeHTTPResponse({"is_active": True, "campaign": {"id": "camp-1"}})
+            return _FakeHTTPResponse(
+                {
+                    "is_active": True,
+                    "session": {"id": "session-canonical-1"},
+                    "campaign": {"id": "camp-1"},
+                }
+            )
         raise AssertionError(f"Unexpected URL: {req.full_url}")
 
     with patch("urllib.request.urlopen", side_effect=_urlopen):
         handled, reply, active, campaign = process_bridge_command("/session use sess-1", client, None, None)
 
     assert handled is True
-    assert "Active session set to sess-1 (active)" in (reply or "")
-    assert active == "sess-1"
+    assert "Active session set to session-canonical-1 (active)" in (reply or "")
+    assert active == "session-canonical-1"
     assert campaign == "camp-1"
 
 

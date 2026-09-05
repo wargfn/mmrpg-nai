@@ -1466,7 +1466,7 @@ def session_attach(
         is_active = bool(state.get("is_active"))
         if is_active and not listed:
             raise RuntimeError("Session reports active but is not listed in active sessions.")
-        if not listed:
+        if not is_active:
             resumed = _mcp_post_json(mcp_base_url, "/web/session/start", {"session_id": selected_id})
             resumed_session = resumed.get("session") or {}
             if isinstance(resumed_session, dict):
