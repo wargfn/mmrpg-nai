@@ -1402,8 +1402,11 @@ def session_attach(
         if selected is None:
             try:
                 state_direct = _mcp_get_json(mcp_base_url, f"/web/session/{session_id}")
-            except Exception:
-                state_direct = None
+            except RuntimeError as exc:
+                if str(exc).startswith("HTTP 404:"):
+                    state_direct = None
+                else:
+                    raise
             if isinstance(state_direct, dict) and state_direct.get("session"):
                 selected = state_direct.get("session")
                 campaign_from_state = state_direct.get("campaign") or {}

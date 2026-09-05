@@ -103,17 +103,19 @@ class MCPWebClient:
 
     def ensure_active_session(self, session_id: str, resume_if_inactive: bool = True) -> tuple[str, bool]:
         state = self.get_session_state(session_id)
+        session = state.get("session") or {}
+        canonical_session_id = str(session.get("id", "")).strip() or session_id
         is_active = bool(state.get("is_active"))
-        listed = self.is_session_listed_active(session_id)
+        listed = self.is_session_listed_active(canonical_session_id)
         if is_active and listed:
-            return session_id, False
+            return canonical_session_id, False
         if is_active and not listed:
             raise MCPBridgeError("Session reports active but is not listed in MCP web active sessions.")
         if not resume_if_inactive:
             if not (is_active and listed):
                 raise MCPBridgeError("Session could not be confirmed as active in MCP web active sessions.")
-            return session_id, False
-        resumed_id = self.resume(session_id)
+            return canonical_session_id, False
+        resumed_id = self.resume(canonical_session_id)
         if not self.is_session_listed_active(resumed_id):
             raise MCPBridgeError("Session could not be confirmed in MCP web active sessions after resume.")
         return resumed_id, True

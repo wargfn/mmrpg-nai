@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from typer.testing import CliRunner
 
@@ -174,3 +176,27 @@ def test_session_attach_uses_canonical_session_id_from_state():
 
     assert result.exit_code == 0, result.output
     assert "Narrated: hello" in result.output
+
+
+def test_session_attach_surfaces_non_404_state_lookup_errors():
+    session_id = "session-1234abcd"
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": []})
+        if req.full_url.endswith(f"/web/session/{session_id}") and req.method == "GET":
+            raise HTTPError(
+                req.full_url,
+                code=500,
+                msg="Internal Server Error",
+                hdrs=None,
+                fp=BytesIO(b'{"detail":"boom"}'),
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        result = runner.invoke(app, ["session", "attach", "--session-id", session_id])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, RuntimeError)
+    assert "HTTP 500" in str(result.exception)
