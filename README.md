@@ -728,8 +728,8 @@ If no session is set, control the bridge from Discord with commands:
 - `/help`
 
 The bridge also accepts CLI-style prefixed commands like `/mmrpg-nai campaign list`.
-Using `/session use <session-id-or-prefix>` now validates and attaches to sessions started in the web UI; if inactive,
-the bridge auto-resumes it when resume mode is enabled.
+Using `/session use <session-id-or-prefix>` validates and selects matching sessions (including those started in the web UI).
+If you select an inactive session, it is set as active target and will resume automatically on the next message when resume mode is enabled.
 Session attach/start from Discord now also verifies the session is present in MCP web active sessions.
 
 | Option | Default | Description |

@@ -1439,7 +1439,7 @@ def session_attach(
         for i, s in enumerate(sessions, 1):
             table.add_row(
                 str(i),
-                str(s.get("id", ""))[:8],
+                str(s.get("id", "")),
                 str(s.get("campaign_id", ""))[:8],
                 str(s.get("title", "")),
                 str(len(s.get("user_ids", []) or [])),

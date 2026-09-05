@@ -584,7 +584,12 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                         return
                     try:
                         async with self._relay_lock:
+                            previous_active = self.active_session_id
                             self.active_session_id = await asyncio.to_thread(mcp.resume, self.active_session_id)
+                            if previous_active and previous_active != self.active_session_id:
+                                self._pending_narrator_echo.pop(previous_active, None)
+                                self._session_log_cursor.pop(previous_active, None)
+                            await self._sync_session_cursor(self.active_session_id, initialize=True)
                             response, mode = await asyncio.to_thread(mcp.chat, self.active_session_id, text)
                     except Exception as exc:
                         await message.reply(f"Could not resume session: {exc}")
