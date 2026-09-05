@@ -33,7 +33,7 @@ It supports **Google AI Studio**, **OpenAI**, **GitHub Copilot**, and **OpenWebU
   - `OPENAI_API_KEY` (OpenAI)
   - `XAI_API_KEY` (xAI Grok)
   - `GITHUB_TOKEN` with `models` permission (GitHub Copilot)
-  - `OLLAMA_API_KEY` (OpenWebUI/Ollama)
+  - `OLLAMA_API_KEY` (optional for OpenWebUI/Ollama)
   - `OPENWEBUI_API_KEY` (OpenWebUI)
 - Optional: `pymupdf` for PDF ingestion (included in requirements)
 
@@ -51,7 +51,7 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
-# Edit .env and set one of: GOOGLE_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GITHUB_TOKEN, OLLAMA_API_KEY, or OPENWEBUI_API_KEY
+# Edit .env and set one of: GOOGLE_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GITHUB_TOKEN, OPENWEBUI_API_KEY, or OLLAMA_API_KEY (if required by your Ollama gateway)
 export $(grep -v '^#' .env | xargs)
 ```
 

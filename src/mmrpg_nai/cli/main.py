@@ -1010,10 +1010,11 @@ def session_run(
             console.print(
                 "[dim]Enter numbers/IDs (e.g. 1,3), 'new' to create, 'unnamed' for a placeholder, or Enter for all.[/dim]"
             )
-            raw_chars = Prompt.ask("Characters playing today", default="all")
-            if raw_chars.strip().lower() in {"", "all"}:
-                party = pc_pool
-            else:
+            while True:
+                raw_chars = Prompt.ask("Characters playing today", default="all")
+                if raw_chars.strip().lower() in {"", "all"}:
+                    party = pc_pool
+                    break
                 selected: list[Character] = []
                 for token in raw_chars.split(","):
                     token = token.strip()
@@ -1034,7 +1035,10 @@ def session_run(
                 dedup: dict[str, Character] = {}
                 for c in selected:
                     dedup[c.id] = c
-                party = list(dedup.values()) or pc_pool
+                party = list(dedup.values())
+                if party:
+                    break
+                console.print("[red]No matching characters found. Try again.[/red]")
         else:
             console.print("[yellow]No player characters found.[/yellow]")
             create_char = Prompt.ask("Create a new player character now? [Y/n]", default="y").strip().lower()
@@ -1236,6 +1240,7 @@ def session_query(
 
     store = _get_store(data_dir)
     cfg = store.load_config()
+    cfg.llm = cfg.llm.resolved(os.environ)
 
     if session_id:
         session = _load_by_prefix_or_exact(store.sessions, session_id, "Session")

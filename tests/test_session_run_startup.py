@@ -113,3 +113,34 @@ def test_session_run_can_create_unnamed_character_during_selection(tmp_path: Pat
     updated_campaign = saved.campaigns.load(campaign.id)
     assert updated_campaign is not None
     assert participant.id in updated_campaign.character_ids
+
+
+def test_session_run_reprompts_on_invalid_character_selection(tmp_path: Path):
+    store = Store(tmp_path)
+    campaign = Campaign(name="Reprompt Campaign")
+    store.campaigns.save(campaign)
+    existing_char = Character(name="Wolverine", alias="Logan", is_npc=False)
+    store.characters.save(existing_char)
+    existing_user = User(first_name="Logan")
+    store.users.save(existing_user)
+
+    prompts = [
+        "1",       # campaign selection
+        "zzz",     # invalid character selector
+        "1",       # valid character selector
+        "",        # users: accept default
+        "",        # session title (accept default)
+        "quit",    # immediate exit from play loop
+    ]
+
+    with patch("mmrpg_nai.llm.narrator.Narrator", _FakeNarrator):
+        with patch("mmrpg_nai.cli.main.Prompt.ask", side_effect=prompts):
+            result = runner.invoke(app, ["session", "run", "--no-stream", "--data-dir", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    assert "No matching characters found. Try again." in result.output
+
+    saved = Store(tmp_path)
+    sessions = saved.sessions.list_all()
+    assert len(sessions) == 1
+    assert sessions[0].participants == [existing_char.id]
