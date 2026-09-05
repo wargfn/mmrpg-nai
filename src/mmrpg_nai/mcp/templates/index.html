@@ -220,7 +220,7 @@
     async function fetchSessionState(reset = false) {
       if (!activeSessionId) return;
       if (document.visibilityState !== "visible") return;
-      const r = await fetch(`/web/session/${activeSessionId}`);
+      const r = await fetch(`/web/session/${activeSessionId}`, { cache: "no-store" });
       const data = await r.json();
       if (!r.ok) {
         appendLine("System", data.detail || "Could not fetch session state", "sys");
@@ -238,7 +238,7 @@
     }
 
     async function loadActiveSessions() {
-      const r = await fetch("/web/active-sessions");
+      const r = await fetch("/web/active-sessions", { cache: "no-store" });
       const data = await r.json();
       if (!r.ok) return;
       attachActiveSessionEl.innerHTML = "";
@@ -251,7 +251,7 @@
     }
 
     async function loadBootstrap() {
-      const r = await fetch("/web/bootstrap");
+      const r = await fetch("/web/bootstrap", { cache: "no-store" });
       const data = await r.json();
 
       campaignEl.innerHTML = "";

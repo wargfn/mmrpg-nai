@@ -89,6 +89,14 @@ def test_web_index(client: TestClient):
     assert "MMRPG Narrator Web" in r.text
 
 
+def test_web_index_disables_cache_for_active_session_refresh(client: TestClient):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'fetch("/web/active-sessions", { cache: "no-store" })' in r.text
+    assert 'fetch("/web/bootstrap", { cache: "no-store" })' in r.text
+    assert '{ cache: "no-store" }' in r.text
+
+
 def test_web_bootstrap(client: TestClient):
     client.post("/campaigns", json={"name": "Web Campaign", "description": "Demo"})
     client.post("/users", json={"first_name": "Alice", "email": "a@example.com"})
