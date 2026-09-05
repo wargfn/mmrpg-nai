@@ -480,6 +480,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                 self.last_campaign_id = campaign_id
 
         async def _capture_session_clear_boundary(self) -> None:
+            self._session_clear_boundary = None
             channel = self.get_channel(settings.channel_id)
             if channel is None:
                 try:
