@@ -563,19 +563,29 @@ def test_process_bridge_command_clear_channel_command():
     assert campaign == "camp-2"
 
 
+def test_process_bridge_command_channel_clear_alias():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/channel clear", client, "session-bbb", "camp-2")
+    assert handled is True
+    assert reply is None
+    assert active == "session-bbb"
+    assert campaign == "camp-2"
+
+
 @pytest.mark.asyncio
 async def test_clear_discord_channel_history_uses_non_bulk_purge():
     calls = []
+    before = object()
 
     class _FakeChannel:
         async def purge(self, **kwargs):
             calls.append(kwargs)
             return ("a", "b", "c")
 
-    deleted_count = await clear_discord_channel_history(_FakeChannel())
+    deleted_count = await clear_discord_channel_history(_FakeChannel(), before=before)
 
     assert deleted_count == 3
-    assert calls == [{"limit": None, "bulk": False}]
+    assert calls == [{"limit": None, "before": before, "bulk": False}]
 
 
 def test_format_session_log_entry():
