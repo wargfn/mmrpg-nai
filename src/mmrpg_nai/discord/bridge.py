@@ -97,8 +97,12 @@ class MCPWebClient:
             payload["title"] = title
         return self._post("/web/session/start", payload)
 
+    def get_session_state(self, session_id: str) -> dict[str, Any]:
+        data = self._get(f"/web/session/{session_id}")
+        return data if isinstance(data, dict) else {}
+
     def ensure_active_session(self, session_id: str, resume_if_inactive: bool = True) -> tuple[str, bool]:
-        state = self._get(f"/web/session/{session_id}")
+        state = self.get_session_state(session_id)
         if bool(state.get("is_active")):
             return session_id, False
         if not resume_if_inactive:
@@ -131,6 +135,22 @@ class DiscordBridgeSettings:
     mcp_timeout_seconds: float = 120.0
     resume_if_inactive: bool = True
     command_prefix: str = ""
+
+
+def _format_session_log_entry(entry: dict[str, Any]) -> str | None:
+    role = str(entry.get("role", "")).strip().lower()
+    content = str(entry.get("content", "")).strip()
+    if not content:
+        return None
+    if role == "player":
+        speaker = "Player"
+    elif role == "narrator":
+        speaker = "Narrator"
+    elif role == "system":
+        speaker = "System"
+    else:
+        speaker = role.title() if role else "Log"
+    return f"**{speaker}:** {content}"
 
 
 def process_bridge_command(
@@ -211,7 +231,11 @@ def process_bridge_command(
             if len(parts) < 3 or not parts[2].strip():
                 return True, "Usage: /session use <session-id>", active_session_id, last_campaign_id
             session_id = parts[2].strip()
-            return True, f"Active session set to {session_id}", session_id, last_campaign_id
+            state = mcp.get_session_state(session_id)
+            campaign = state.get("campaign") or {}
+            campaign_id = str(campaign.get("id", "")).strip() or last_campaign_id
+            status = "active" if bool(state.get("is_active")) else "inactive"
+            return True, f"Active session set to {session_id} ({status})", session_id, campaign_id
         if action in {"start", "new"}:
             if len(parts) >= 3:
                 campaign_ref = parts[2].strip()
@@ -294,6 +318,55 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
             super().__init__(intents=intents)
             self.active_session_id = settings.session_id
             self.last_campaign_id: str | None = None
+            self._session_log_cursor: dict[str, int] = {}
+            self._relay_task: asyncio.Task[None] | None = None
+
+        async def _sync_session_cursor(self, session_id: str) -> None:
+            state = await asyncio.to_thread(mcp.get_session_state, session_id)
+            log = (state.get("session") or {}).get("log") or []
+            self._session_log_cursor[session_id] = len(log) if isinstance(log, list) else 0
+            campaign = state.get("campaign") or {}
+            campaign_id = str(campaign.get("id", "")).strip()
+            if campaign_id:
+                self.last_campaign_id = campaign_id
+
+        async def _relay_active_session_updates(self) -> None:
+            while not self.is_closed():
+                session_id = self.active_session_id
+                if not session_id:
+                    await asyncio.sleep(1.0)
+                    continue
+                try:
+                    state = await asyncio.to_thread(mcp.get_session_state, session_id)
+                except Exception:
+                    await asyncio.sleep(2.0)
+                    continue
+                log = (state.get("session") or {}).get("log") or []
+                if not isinstance(log, list):
+                    await asyncio.sleep(1.0)
+                    continue
+                last_seen = self._session_log_cursor.get(session_id)
+                if last_seen is None:
+                    self._session_log_cursor[session_id] = len(log)
+                    await asyncio.sleep(1.0)
+                    continue
+                if len(log) < last_seen:
+                    self._session_log_cursor[session_id] = len(log)
+                    await asyncio.sleep(1.0)
+                    continue
+                if len(log) > last_seen:
+                    channel = self.get_channel(settings.channel_id)
+                    if channel is not None:
+                        for entry in log[last_seen:]:
+                            if not isinstance(entry, dict):
+                                continue
+                            rendered = _format_session_log_entry(entry)
+                            if not rendered:
+                                continue
+                            for chunk in split_discord_message(rendered):
+                                await channel.send(chunk)
+                    self._session_log_cursor[session_id] = len(log)
+                await asyncio.sleep(1.0)
 
         async def on_ready(self) -> None:
             if self.active_session_id:
@@ -309,8 +382,11 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                         print(f"Discord bridge resumed session {previous} -> {ensured_session_id}")
                     else:
                         self.active_session_id = ensured_session_id
+                    await self._sync_session_cursor(self.active_session_id)
                 except Exception as exc:
                     print(f"Discord bridge could not validate active session {self.active_session_id}: {exc}")
+            if self._relay_task is None or self._relay_task.done():
+                self._relay_task = asyncio.create_task(self._relay_active_session_updates())
             print(
                 f"Discord bridge connected as {self.user} "
                 f"(channel={settings.channel_id}, session={self.active_session_id or 'none'})"
@@ -345,8 +421,31 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     await message.reply(f"Command error: {exc}")
                     return
                 if handled:
-                    self.active_session_id = new_session_id
-                    self.last_campaign_id = new_campaign_id
+                    normalized = text[1:].strip().lower()
+                    if normalized.startswith("mmrpg-nai "):
+                        normalized = normalized[len("mmrpg-nai "):]
+                    needs_activation = normalized.startswith("session use") or normalized.startswith("session start")
+                    if new_session_id:
+                        if needs_activation:
+                            try:
+                                ensured_session_id, resumed = await asyncio.to_thread(
+                                    mcp.ensure_active_session,
+                                    new_session_id,
+                                    settings.resume_if_inactive,
+                                )
+                                self.active_session_id = ensured_session_id
+                                await self._sync_session_cursor(ensured_session_id)
+                                if resumed:
+                                    reply = f"{reply}\nResumed and attached to session {ensured_session_id}."
+                            except Exception as exc:
+                                await message.reply(f"Could not attach session {new_session_id}: {exc}")
+                                return
+                        else:
+                            self.active_session_id = new_session_id
+                    else:
+                        self.active_session_id = new_session_id
+                    if new_campaign_id:
+                        self.last_campaign_id = new_campaign_id
                     if reply:
                         await message.reply(reply)
                     return
@@ -371,6 +470,11 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                 except Exception as exc:
                     await message.reply(f"MCP error: {exc}")
                     return
+
+            try:
+                await self._sync_session_cursor(self.active_session_id)
+            except Exception:
+                pass
 
             speaker = "Narrator (meta)" if mode == "meta" else "Narrator"
             out = f"**{speaker}:** {response}"

@@ -13,6 +13,7 @@ from mmrpg_nai.discord.bridge import (
     MCPBridgeError,
     MCPSessionInactiveError,
     MCPWebClient,
+    _format_session_log_entry,
     process_bridge_command,
     split_discord_message,
 )
@@ -213,6 +214,23 @@ def test_process_bridge_command_session_start_updates_canonical_campaign_id():
     assert campaign == "camp-1-full"
 
 
+def test_process_bridge_command_session_use_validates_session_state():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/sess-1"):
+            return _FakeHTTPResponse({"is_active": True, "campaign": {"id": "camp-1"}})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session use sess-1", client, None, None)
+
+    assert handled is True
+    assert "Active session set to sess-1 (active)" in (reply or "")
+    assert active == "sess-1"
+    assert campaign == "camp-1"
+
+
 def test_process_bridge_command_campaign_list():
     client = MCPWebClient("http://localhost:8000")
 
@@ -282,3 +300,11 @@ def test_process_bridge_command_session_start_title_uses_last_campaign_when_ref_
     assert "Started session" in (reply or "")
     assert active == "sess-1"
     assert campaign == "camp-1"
+
+
+def test_format_session_log_entry():
+    assert _format_session_log_entry({"role": "player", "content": "hello"}) == "**Player:** hello"
+    assert _format_session_log_entry({"role": "narrator", "content": "world"}) == "**Narrator:** world"
+    assert _format_session_log_entry({"role": "system", "content": "ok"}) == "**System:** ok"
+    assert _format_session_log_entry({"role": "custom", "content": "x"}) == "**Custom:** x"
+    assert _format_session_log_entry({"role": "player", "content": "   "}) is None

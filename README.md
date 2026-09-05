@@ -724,6 +724,8 @@ If no session is set, control the bridge from Discord with commands:
 - `/help`
 
 The bridge also accepts CLI-style prefixed commands like `/mmrpg-nai campaign list`.
+Using `/session use <session-id>` now validates and attaches to sessions started in the web UI; if inactive,
+the bridge auto-resumes it when resume mode is enabled.
 
 | Option | Default | Description |
 |---|---|---|
