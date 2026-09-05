@@ -51,7 +51,8 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
-# Edit .env and set one of: GOOGLE_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GITHUB_TOKEN, OPENWEBUI_API_KEY, or OLLAMA_API_KEY (if required by your Ollama gateway)
+# Edit .env and set the token env var for your selected provider profile
+# (defaults: GOOGLE_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GITHUB_TOKEN, OPENWEBUI_API_KEY, OLLAMA_API_KEY)
 export $(grep -v '^#' .env | xargs)
 ```
 

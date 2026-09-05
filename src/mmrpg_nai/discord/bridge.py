@@ -443,7 +443,11 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     normalized = text[1:].strip().lower()
                     if normalized.startswith("mmrpg-nai "):
                         normalized = normalized[len("mmrpg-nai "):]
-                    needs_activation = normalized.startswith("session use") or normalized.startswith("session start")
+                    needs_activation = (
+                        normalized.startswith("session use")
+                        or normalized.startswith("session start")
+                        or normalized.startswith("session new")
+                    )
                     if new_session_id:
                         if needs_activation:
                             try:
