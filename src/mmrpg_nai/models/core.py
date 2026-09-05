@@ -354,7 +354,13 @@ class LLMConfig(BaseModel):
             selected = self.provider_settings.get(self.provider)
             if not selected:
                 return self
-            if self.api_key_env != selected.api_key_env and self.api_key_env in managed_envs:
+            if self.api_key_env in managed_envs and (
+                self.model != selected.model
+                or self.api_base != selected.api_base
+                or self.api_key_env != selected.api_key_env
+                or self.max_tokens != selected.max_tokens
+                or self.temperature != selected.temperature
+            ):
                 return self.model_copy(update={
                     "provider": self.provider,
                     "model": selected.model,

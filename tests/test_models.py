@@ -159,17 +159,23 @@ def test_llm_config_prefers_selected_provider_when_its_key_is_set():
     assert resolved.api_key_env == "GITHUB_TOKEN"
 
 
-def test_llm_config_preserves_top_level_overrides_for_selected_provider():
+def test_llm_config_reconciles_selected_provider_top_level_fields():
     cfg = LLMConfig(
         provider="openai",
         model="custom-model",
         api_base="https://custom.example/v1",
         api_key_env="OPENAI_API_KEY",
+        max_tokens=123,
+        temperature=0.1,
     )
     resolved = cfg.resolved({"OPENAI_API_KEY": "sk-test"})
     assert resolved.provider == "openai"
-    assert resolved.model == "custom-model"
-    assert resolved.api_base == "https://custom.example/v1"
+    selected = cfg.provider_settings["openai"]
+    assert resolved.model == selected.model
+    assert resolved.api_base == selected.api_base
+    assert resolved.api_key_env == selected.api_key_env
+    assert resolved.max_tokens == selected.max_tokens
+    assert resolved.temperature == selected.temperature
 
 
 def test_source_material():
