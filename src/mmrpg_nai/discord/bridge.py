@@ -198,7 +198,7 @@ def split_discord_message(text: str, limit: int = 1800) -> list[str]:
 
 async def clear_discord_channel_history(channel: Any) -> int:
     deleted = await channel.purge(limit=None, bulk=False)
-    return len(deleted) if isinstance(deleted, list) else 0
+    return len(deleted)
 
 
 @dataclass
@@ -602,11 +602,10 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     previous_active = self.active_session_id
                     if is_clear_command:
                         try:
-                            deleted_count = await clear_discord_channel_history(message.channel)
+                            await clear_discord_channel_history(message.channel)
                         except Exception as exc:
                             await message.reply(f"Could not clear channel history: {exc}")
                             return
-                        await message.channel.send(f"Cleared {deleted_count} messages from this channel.")
                         return
                     if needs_activation and new_session_id:
                         try:

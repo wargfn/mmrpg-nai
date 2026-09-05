@@ -570,7 +570,7 @@ async def test_clear_discord_channel_history_uses_non_bulk_purge():
     class _FakeChannel:
         async def purge(self, **kwargs):
             calls.append(kwargs)
-            return ["a", "b", "c"]
+            return ("a", "b", "c")
 
     deleted_count = await clear_discord_channel_history(_FakeChannel())
 
