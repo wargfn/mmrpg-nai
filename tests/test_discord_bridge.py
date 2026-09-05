@@ -352,6 +352,32 @@ def test_process_bridge_command_session_list():
     assert campaign == "camp-2"
 
 
+def test_process_bridge_command_session_end_detaches_active():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/session-bbb/end"):
+            return _FakeHTTPResponse({"ended": True})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session end", client, "session-bbb", "camp-2")
+
+    assert handled is True
+    assert "Ended and detached from session session-bbb." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_end_without_active():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/session end", client, None, "camp-2")
+    assert handled is True
+    assert "No active session to end." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
 def test_process_bridge_command_campaign_list():
     client = MCPWebClient("http://localhost:8000")
 

@@ -97,6 +97,9 @@ class MCPWebClient:
             payload["title"] = title
         return self._post("/web/session/start", payload)
 
+    def end_session(self, session_id: str) -> dict[str, Any]:
+        return self._post(f"/web/session/{session_id}/end", {})
+
     def get_session_state(self, session_id: str) -> dict[str, Any]:
         data = self._get(f"/web/session/{session_id}")
         return data if isinstance(data, dict) else {}
@@ -237,6 +240,7 @@ def process_bridge_command(
                 "• /session start [campaign-id-or-prefix] [title]\n"
                 "• /session list\n"
                 "• /session use <session-id-or-prefix>\n"
+                "• /session end\n"
                 "• /session status"
             ),
             active_session_id,
@@ -277,7 +281,7 @@ def process_bridge_command(
 
     if cmd == "session":
         if len(parts) < 2:
-            return True, "Usage: /session list|start|use|status ...", active_session_id, last_campaign_id
+            return True, "Usage: /session list|start|use|end|status ...", active_session_id, last_campaign_id
         action = parts[1].lower()
         if action == "list":
             sessions = mcp.list_active_sessions()
@@ -297,6 +301,13 @@ def process_bridge_command(
             sid = active_session_id or "none"
             cid = last_campaign_id or "none"
             return True, f"Active session: {sid}\nLast campaign: {cid}", active_session_id, last_campaign_id
+        if action == "end":
+            if not active_session_id:
+                return True, "No active session to end.", active_session_id, last_campaign_id
+            ended = mcp.end_session(active_session_id)
+            if bool(ended.get("ended")):
+                return True, f"Ended and detached from session {active_session_id}.", None, last_campaign_id
+            return True, f"Detached from session {active_session_id}.", None, last_campaign_id
         if action == "use":
             if len(parts) < 3 or not parts[2].strip():
                 return True, "Usage: /session use <session-id-or-prefix>", active_session_id, last_campaign_id
@@ -542,28 +553,31 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                         or normalized.startswith("session start")
                         or normalized.startswith("session new")
                     )
-                    if new_session_id:
-                        if needs_activation:
-                            try:
-                                ensured_session_id, resumed = await asyncio.to_thread(
-                                    mcp.ensure_active_session,
-                                    new_session_id,
-                                    settings.resume_if_inactive,
-                                )
-                                previous_active = self.active_session_id
-                                self.active_session_id = ensured_session_id
-                                if resumed and previous_active and previous_active != ensured_session_id:
-                                    self._pending_narrator_echo.pop(previous_active, None)
-                                    self._session_log_cursor.pop(previous_active, None)
-                                await self._sync_session_cursor(ensured_session_id, initialize=True)
-                                if resumed:
-                                    reply = f"{reply}\nResumed and attached to session {ensured_session_id}."
-                            except Exception as exc:
-                                await message.reply(f"Could not attach session {new_session_id}: {exc}")
-                                return
-                        else:
-                            self.active_session_id = new_session_id
-                            await self._sync_session_cursor(new_session_id, initialize=True)
+                    previous_active = self.active_session_id
+                    if needs_activation and new_session_id:
+                        try:
+                            ensured_session_id, resumed = await asyncio.to_thread(
+                                mcp.ensure_active_session,
+                                new_session_id,
+                                settings.resume_if_inactive,
+                            )
+                            self.active_session_id = ensured_session_id
+                            if resumed and previous_active and previous_active != ensured_session_id:
+                                self._pending_narrator_echo.pop(previous_active, None)
+                                self._session_log_cursor.pop(previous_active, None)
+                            await self._sync_session_cursor(ensured_session_id, initialize=True)
+                            if resumed:
+                                reply = f"{reply}\nResumed and attached to session {ensured_session_id}."
+                        except Exception as exc:
+                            await message.reply(f"Could not attach session {new_session_id}: {exc}")
+                            return
+                    else:
+                        self.active_session_id = new_session_id
+                        if previous_active and previous_active != self.active_session_id:
+                            self._pending_narrator_echo.pop(previous_active, None)
+                            self._session_log_cursor.pop(previous_active, None)
+                        if self.active_session_id and self.active_session_id != previous_active:
+                            await self._sync_session_cursor(self.active_session_id, initialize=True)
                     if new_campaign_id:
                         self.last_campaign_id = new_campaign_id
                     if reply:

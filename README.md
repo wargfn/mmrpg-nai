@@ -724,6 +724,7 @@ If no session is set, control the bridge from Discord with commands:
 - `/session start [campaign-id-or-prefix] [title]`
 - `/session list`
 - `/session use <session-id-or-prefix>`
+- `/session end`
 - `/session status`
 - `/help`
 
