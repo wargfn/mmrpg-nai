@@ -167,6 +167,9 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
         def recap_last_session(self, last_session):
             return "Last time on MMRPG..."
 
+        def summarise_session_close(self, session, campaign):
+            return "Summary text", "Start at dawn on the helicarrier."
+
         def narrate(self, player_input: str, stream: bool = False):
             self.session.log.append(LogEntry(role="player", content=player_input))
             out = f"Narrated: {player_input}"
@@ -225,6 +228,10 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     assert touched_user["last_login_at"] is not None
     assert len(touched_user["session_timestamps"]) == 1
 
+    ended = client.post(f"/web/session/{session_id}/end")
+    assert ended.status_code == 200
+    assert ended.json()["ended"] is True
+
     resumed = client.post("/web/session/start", json={"session_id": session_id})
     assert resumed.status_code == 200
     resumed_data = resumed.json()
@@ -232,6 +239,7 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     assert resumed_session_id != session_id
     assert resumed_data["session"]["campaign_id"] == campaign["id"]
     assert resumed_data["recap"] == "Last time on MMRPG..."
+    assert resumed_data["start_prompt"] == "Start at dawn on the helicarrier."
     assert len(starts) == 2
     assert len(resumed_data["session"]["log"]) >= 4
     assert resumed_data["session"]["log"][0]["role"] == "player"
@@ -308,6 +316,12 @@ def test_web_session_end(client: TestClient, monkeypatch: pytest.MonkeyPatch):
         def recap_last_session(self, last_session):
             return ""
 
+        def summarise_session_close(self, session, campaign):
+            return "The heroes escaped Latveria.", "Open with the team debriefing in NYC."
+
+        def summarise_campaign_progress(self, campaign, completed_sessions):
+            return "One major objective completed; Doom remains at large."
+
         def narrate(self, player_input: str, stream: bool = False):
             return "ok"
 
@@ -326,11 +340,21 @@ def test_web_session_end(client: TestClient, monkeypatch: pytest.MonkeyPatch):
 
     r = client.post(f"/web/session/{session_id}/end")
     assert r.status_code == 200
-    assert r.json() == {"ended": True}
+    data = r.json()
+    assert data["ended"] is True
+    assert data["summary"] == "The heroes escaped Latveria."
+    assert data["start_prompt"] == "Open with the team debriefing in NYC."
+    assert "objective completed" in data["campaign_progress"]
+
+    state = client.get(f"/sessions/{session_id}")
+    assert state.status_code == 200
+    session_data = state.json()
+    assert session_data["synopsis"] == "The heroes escaped Latveria."
+    assert session_data["start_prompt"] == "Open with the team debriefing in NYC."
 
     r = client.post(f"/web/session/{session_id}/end")
     assert r.status_code == 200
-    assert r.json() == {"ended": False}
+    assert r.json()["ended"] is False
 
 
 def test_user_crud(client: TestClient):

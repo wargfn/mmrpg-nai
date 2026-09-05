@@ -324,6 +324,55 @@ class Narrator:
         ]
         return self.llm.complete(messages, stream=False)  # type: ignore[return-value]
 
+    def summarise_session_close(self, session: Session, campaign: Campaign) -> tuple[str, str]:
+        """Generate an end-of-session summary and a next-session starting prompt."""
+        lines: list[str] = []
+        for entry in session.log:
+            if entry.role in ("player", "narrator", "meta"):
+                lines.append(f"{entry.role.capitalize()}: {entry.content}")
+        if not lines and session.synopsis:
+            lines = [session.synopsis]
+        if not lines:
+            return "", ""
+
+        transcript = "\n".join(lines[-80:])
+        plan_section = f"\n\nCampaign plan:\n{campaign.plan}" if campaign.plan else ""
+        progress_section = (
+            f"\n\nCurrent campaign progress summary:\n{campaign.campaign_progress}"
+            if campaign.campaign_progress
+            else ""
+        )
+        messages = [
+            {"role": "system", "content": self.cfg.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Campaign: {campaign.name}.{plan_section}{progress_section}\n\n"
+                    f"Session transcript:\n{transcript}\n\n"
+                    "Produce two sections with these exact headings:\n"
+                    "SESSION_SUMMARY:\n"
+                    "- 3-6 concise sentences summarizing what happened and current state.\n\n"
+                    "NEXT_SESSION_START:\n"
+                    "- A short opening prompt (2-4 sentences) describing where to resume play next session."
+                ),
+            },
+        ]
+        output = self.llm.complete(messages, stream=False)  # type: ignore[assignment]
+        text = str(output).strip()
+        if not text:
+            return "", ""
+        summary = ""
+        next_start = ""
+        marker_summary = "SESSION_SUMMARY:"
+        marker_next = "NEXT_SESSION_START:"
+        if marker_summary in text and marker_next in text:
+            before, after = text.split(marker_next, 1)
+            summary = before.split(marker_summary, 1)[-1].strip()
+            next_start = after.strip()
+        else:
+            summary = text
+        return summary, next_start
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

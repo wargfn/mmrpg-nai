@@ -123,6 +123,7 @@
     let activeSessionId = null;
     let renderedLogCount = 0;
     let lastRecap = "";
+    let lastStartPrompt = "";
     let pollHandle = null;
     let pollingEnabled = false;
 
@@ -316,10 +317,14 @@
       setActiveStatus(data.session, true);
       renderedLogCount = 0;
       lastRecap = data.recap || "";
+      lastStartPrompt = data.start_prompt || "";
       chatLog.replaceChildren();
       appendSessionContext(data.session, data.campaign, data.users || [], data.participants || []);
       if (lastRecap) {
         appendLine("Previously", lastRecap, "sys");
+      }
+      if (lastStartPrompt) {
+        appendLine("Start Here", lastStartPrompt, "sys");
       }
       renderLog(data.session.log, false);
       await loadBootstrap();
@@ -377,6 +382,12 @@
       if (!r.ok || !data.ended) {
         appendLine("System", "Could not end active session", "sys");
         return;
+      }
+      if (data.summary) {
+        appendLine("Session Summary", data.summary, "sys");
+      }
+      if (data.start_prompt) {
+        appendLine("Next Session Start", data.start_prompt, "sys");
       }
       await loadActiveSessions();
       await fetchSessionState(false);

@@ -162,6 +162,7 @@ class Session(BaseModel):
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ended_at: datetime | None = None
     notes: str = ""
+    start_prompt: str = ""
 
 
 # ---------------------------------------------------------------------------
