@@ -212,3 +212,34 @@ def test_process_bridge_command_prefixed_cli_style_campaign_list():
     assert handled is True
     assert "Campaigns:" in (reply or "")
     assert "Alpha" in (reply or "")
+
+
+def test_process_bridge_command_session_start_title_uses_last_campaign_when_ref_not_found():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/start"):
+            payload = json.loads(req.data.decode("utf-8"))
+            if payload["campaign_id"] == "My":
+                raise HTTPError(
+                    url=req.full_url,
+                    code=404,
+                    msg="Not Found",
+                    hdrs=None,
+                    fp=io.BytesIO(json.dumps({"detail": "Campaign not found"}).encode("utf-8")),
+                )
+            if payload["campaign_id"] == "camp-1":
+                return _FakeHTTPResponse(
+                    {"session": {"id": "sess-1", "title": payload.get("title") or "Session 1"}, "campaign": {"id": "camp-1"}}
+                )
+        if req.full_url.endswith("/campaigns"):
+            return _FakeHTTPResponse([])
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session start My Session Title", client, None, "camp-1")
+
+    assert handled is True
+    assert "Started session" in (reply or "")
+    assert active == "sess-1"
+    assert campaign == "camp-1"

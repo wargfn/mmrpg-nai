@@ -236,7 +236,16 @@ def process_bridge_command(
                     elif len(name_matches) == 1:
                         campaign_id = str(name_matches[0].get("id", "")).strip()
                     else:
-                        return True, "Campaign not found or ambiguous. Use exact campaign ID.", active_session_id, last_campaign_id
+                        if last_campaign_id:
+                            title = " ".join(parts[2:]).strip() or None
+                            campaign_id = last_campaign_id
+                        else:
+                            return (
+                                True,
+                                "Campaign not found or ambiguous. Use exact campaign ID.",
+                                active_session_id,
+                                last_campaign_id,
+                            )
                     started = mcp.start_session(campaign_id, title=title)
                 else:
                     raise
