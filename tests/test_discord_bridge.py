@@ -14,6 +14,7 @@ from mmrpg_nai.discord.bridge import (
     MCPSessionInactiveError,
     MCPWebClient,
     _format_session_log_entry,
+    clear_discord_channel_history,
     process_bridge_command,
     split_discord_message,
 )
@@ -380,6 +381,24 @@ def test_process_bridge_command_session_end_without_active():
     assert campaign == "camp-2"
 
 
+def test_process_bridge_command_session_detach_unsets_active():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/session detach", client, "session-bbb", "camp-2")
+    assert handled is True
+    assert "Detached from session session-bbb." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_detach_without_active():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/session detach", client, None, "camp-2")
+    assert handled is True
+    assert "No active session to detach." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
 def test_process_bridge_command_session_end_keeps_attachment_when_not_ended():
     client = MCPWebClient("http://localhost:8000")
 
@@ -512,6 +531,51 @@ def test_process_bridge_command_session_start_title_uses_last_campaign_when_ref_
     assert "Started session" in (reply or "")
     assert active == "sess-1"
     assert campaign == "camp-1"
+
+
+def test_process_bridge_command_session_run_starts_session():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/start"):
+            payload = json.loads(req.data.decode("utf-8"))
+            assert payload == {"campaign_id": "camp-1", "title": "Night Shift"}
+            return _FakeHTTPResponse(
+                {"session": {"id": "sess-9", "title": "Night Shift"}, "campaign": {"id": "camp-1", "name": "Alpha"}}
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session run camp-1 Night Shift", client, None, None)
+
+    assert handled is True
+    assert "Started session 'Night Shift' (sess-9) in campaign 'Alpha'." == reply
+    assert active == "sess-9"
+    assert campaign == "camp-1"
+
+
+def test_process_bridge_command_clear_channel_command():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/clear", client, "session-bbb", "camp-2")
+    assert handled is True
+    assert reply is None
+    assert active == "session-bbb"
+    assert campaign == "camp-2"
+
+
+@pytest.mark.asyncio
+async def test_clear_discord_channel_history_uses_non_bulk_purge():
+    calls = []
+
+    class _FakeChannel:
+        async def purge(self, **kwargs):
+            calls.append(kwargs)
+            return ["a", "b", "c"]
+
+    deleted_count = await clear_discord_channel_history(_FakeChannel())
+
+    assert deleted_count == 3
+    assert calls == [{"limit": None, "bulk": False}]
 
 
 def test_format_session_log_entry():
