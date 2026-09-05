@@ -1292,7 +1292,7 @@ def session_query(
 
 @session_app.command("attach")
 def session_attach(
-    session_id: Optional[str] = typer.Option(None, help="Active session ID or prefix (optional)"),
+    session_id: Optional[str] = typer.Option(None, help="Active session ID or prefix (optional, active sessions only)"),
     mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
 ) -> None:
     """Attach CLI to an active MCP web session and chat through it."""

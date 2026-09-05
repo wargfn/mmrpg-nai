@@ -183,25 +183,43 @@ def process_bridge_command(
             if len(parts) >= 3:
                 campaign_ref = parts[2].strip()
                 title = " ".join(parts[3:]).strip() or None
-                campaigns = mcp.list_campaigns()
-                exact = [c for c in campaigns if str(c.get("id", "")) == campaign_ref]
-                if exact:
-                    campaign = exact[0]
-                else:
-                    prefix = [c for c in campaigns if str(c.get("id", "")).startswith(campaign_ref)]
-                    name = [c for c in campaigns if str(c.get("name", "")).lower() == campaign_ref.lower()]
-                    matches = prefix or name
-                    if len(matches) != 1:
-                        return True, "Campaign not found or ambiguous. Use exact campaign ID.", active_session_id, last_campaign_id
-                    campaign = matches[0]
-                campaign_id = str(campaign.get("id", "")).strip()
+                campaign_id = campaign_ref
             else:
                 if not last_campaign_id:
                     return True, "No campaign selected. Run /campaign new <name> first.", active_session_id, last_campaign_id
                 campaign_id = last_campaign_id
                 title = None
 
-            started = mcp.start_session(campaign_id, title=title)
+            try:
+                started = mcp.start_session(campaign_id, title=title)
+            except MCPBridgeError as exc:
+                if len(parts) >= 3 and "campaign not found" in str(exc).lower():
+                    campaigns = mcp.list_campaigns()
+                    exact_match: dict[str, Any] | None = None
+                    prefix_matches: list[dict[str, Any]] = []
+                    name_matches: list[dict[str, Any]] = []
+                    ref_lower = campaign_ref.lower()
+                    for campaign_item in campaigns:
+                        cid = str(campaign_item.get("id", ""))
+                        cname = str(campaign_item.get("name", ""))
+                        if cid == campaign_ref:
+                            exact_match = campaign_item
+                            break
+                        if cid.startswith(campaign_ref):
+                            prefix_matches.append(campaign_item)
+                        if cname.lower() == ref_lower:
+                            name_matches.append(campaign_item)
+                    if exact_match is not None:
+                        campaign_id = str(exact_match.get("id", "")).strip()
+                    elif len(prefix_matches) == 1:
+                        campaign_id = str(prefix_matches[0].get("id", "")).strip()
+                    elif len(name_matches) == 1:
+                        campaign_id = str(name_matches[0].get("id", "")).strip()
+                    else:
+                        return True, "Campaign not found or ambiguous. Use exact campaign ID.", active_session_id, last_campaign_id
+                    started = mcp.start_session(campaign_id, title=title)
+                else:
+                    raise
             session = started.get("session") or {}
             campaign = started.get("campaign") or {}
             new_session_id = str(session.get("id", "")).strip()

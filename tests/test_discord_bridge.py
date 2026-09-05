@@ -131,3 +131,25 @@ def test_process_bridge_command_malformed_quotes():
     assert "Malformed command syntax" in (reply or "")
     assert active is None
     assert campaign is None
+
+
+def test_process_bridge_command_session_start_exact_id_without_campaign_lookup():
+    client = MCPWebClient("http://localhost:8000")
+    calls = []
+
+    def _urlopen(req, timeout=15):
+        calls.append(req.full_url)
+        if req.full_url.endswith("/web/session/start"):
+            return _FakeHTTPResponse(
+                {"session": {"id": "sess-1", "title": "Session 1"}, "campaign": {"id": "camp-1", "name": "Alpha"}}
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session start camp-1", client, None, None)
+
+    assert handled is True
+    assert "Started session" in (reply or "")
+    assert active == "sess-1"
+    assert campaign == "camp-1"
+    assert not any(url.endswith("/campaigns") for url in calls)

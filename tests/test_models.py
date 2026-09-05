@@ -144,6 +144,14 @@ def test_llm_config_backfills_missing_provider_settings():
     assert cfg.provider_settings["openai"].model == "custom-openai"
 
 
+def test_llm_config_detects_provider_with_custom_api_key_env():
+    cfg = LLMConfig()
+    cfg.provider_settings["openai"].api_key_env = "MY_OPENAI_KEY"
+    resolved = cfg.resolved({"MY_OPENAI_KEY": "sk-custom"})
+    assert resolved.provider == "openai"
+    assert resolved.api_key_env == "MY_OPENAI_KEY"
+
+
 def test_source_material():
     sm = SourceMaterial(title="Core Rulebook", file_path="/tmp/core.pdf", page_count=300)
     assert sm.title == "Core Rulebook"

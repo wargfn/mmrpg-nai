@@ -325,18 +325,18 @@ class LLMConfig(BaseModel):
 
     def detect_provider(self, env: Mapping[str, str] | None = None) -> str | None:
         env_map = env or os.environ
-        if (env_map.get("GOOGLE_API_KEY") or "").strip():
-            return "google_ai_studio"
-        if (env_map.get("OPENAI_API_KEY") or "").strip():
-            return "openai"
-        if (env_map.get("XAI_API_KEY") or "").strip():
-            return "grok"
-        if (env_map.get("GITHUB_TOKEN") or "").strip():
-            return "github_copilot"
-        if (env_map.get("OLLAMA_API_KEY") or "").strip():
-            return "ollama"
-        if (env_map.get("OPENWEBUI_API_KEY") or "").strip():
-            return "openwebui"
+        detection_order = [
+            "google_ai_studio",
+            "openai",
+            "grok",
+            "github_copilot",
+            "ollama",
+            "openwebui",
+        ]
+        for provider in detection_order:
+            settings = self.provider_settings.get(provider)
+            if settings and (env_map.get(settings.api_key_env) or "").strip():
+                return provider
         return None
 
     def resolved(self, env: Mapping[str, str] | None = None) -> "LLMConfig":
