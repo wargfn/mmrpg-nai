@@ -395,7 +395,6 @@ def web_session_end(session_id: str) -> WebSessionEndResponse:
             summary, start_prompt = "", ""
         try:
             completed_sessions = [s for s in store.sessions.find(campaign_id=campaign.id) if s.ended_at is not None]
-            completed_sessions.append(session)
             campaign_progress = narrator.summarise_campaign_progress(campaign, completed_sessions)
             campaign.campaign_progress = campaign_progress
             store.campaigns.save(campaign)
