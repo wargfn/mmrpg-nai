@@ -186,6 +186,14 @@ mmrpg-nai config provider select openai
 mmrpg-nai config provider model gpt-4.1
 ```
 
+To tune other settings on a specific provider profile, update these paths:
+```bash
+mmrpg-nai config set llm.provider_settings.<provider>.api_base <url>
+mmrpg-nai config set llm.provider_settings.<provider>.api_key_env <env-var-name>
+mmrpg-nai config set llm.provider_settings.<provider>.temperature <float>
+mmrpg-nai config set llm.provider_settings.<provider>.max_tokens <int>
+```
+
 ---
 
 ### `mmrpg-nai campaign` — Campaigns

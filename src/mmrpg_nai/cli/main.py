@@ -414,7 +414,7 @@ def config_models(
                 f"  1. Detected provider: [bold]{llm_cfg.provider}[/bold]\n"
                 f"  2. Export a key/token: [bold]export {llm_cfg.api_key_env}=...[/bold]\n"
                 "  3. Select a provider: [bold]mmrpg-nai config provider select <provider>[/bold]\n"
-                "  4. Set model for that provider: [bold]mmrpg-nai config provider model <provider> <model-id>[/bold]",
+                "  4. Set model for that provider: [bold]mmrpg-nai config provider model <model-id>[/bold]",
                 title="[bold red]⚠ Token not set[/bold red]",
                 border_style="red",
             )
@@ -1091,6 +1091,9 @@ def session_run(
         for character in party:
             if character.id not in campaign.character_ids:
                 campaign.character_ids.append(character.id)
+        for user in session_users:
+            if user.id not in campaign.user_ids:
+                campaign.user_ids.append(user.id)
         store.campaigns.save(campaign)
 
         # ------------------------------------------------------------------
@@ -1108,9 +1111,6 @@ def session_run(
         store.sessions.save(session)
         # Link session to campaign
         campaign.session_ids.append(session.id)
-        for user in session_users:
-            if user.id not in campaign.user_ids:
-                campaign.user_ids.append(user.id)
         store.campaigns.save(campaign)
         console.print(f"[green]Created session #{session.session_number}: {session.id}[/green]")
 
