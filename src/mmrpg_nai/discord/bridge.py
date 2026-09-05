@@ -307,7 +307,12 @@ def process_bridge_command(
             ended = mcp.end_session(active_session_id)
             if bool(ended.get("ended")):
                 return True, f"Ended and detached from session {active_session_id}.", None, last_campaign_id
-            return True, f"Detached from session {active_session_id}.", None, last_campaign_id
+            return (
+                True,
+                f"Could not end session {active_session_id}; still attached.",
+                active_session_id,
+                last_campaign_id,
+            )
         if action == "use":
             if len(parts) < 3 or not parts[2].strip():
                 return True, "Usage: /session use <session-id-or-prefix>", active_session_id, last_campaign_id
