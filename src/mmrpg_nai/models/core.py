@@ -343,8 +343,13 @@ class LLMConfig(BaseModel):
         managed_envs = {ps.api_key_env for ps in self.provider_settings.values()}
         if self.api_key_env not in managed_envs:
             return self
-        detected = self.detect_provider(env)
-        target_provider = detected or self.provider
+        env_map = env or os.environ
+        configured = self.provider_settings.get(self.provider)
+        if configured and (env_map.get(configured.api_key_env) or "").strip():
+            target_provider = self.provider
+        else:
+            detected = self.detect_provider(env_map)
+            target_provider = detected or self.provider
         selected = self.provider_settings.get(target_provider)
         if not selected:
             return self

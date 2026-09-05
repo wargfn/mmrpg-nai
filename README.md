@@ -55,15 +55,17 @@ cp .env.example .env
 export $(grep -v '^#' .env | xargs)
 ```
 
-Provider detection order is:
-1. `GOOGLE_API_KEY`
-2. `OPENAI_API_KEY`
-3. `XAI_API_KEY`
-4. `GITHUB_TOKEN`
-5. `OLLAMA_API_KEY`
-6. `OPENWEBUI_API_KEY`
+Provider selection precedence:
+1. If your selected provider (`config provider select`) has its configured token env var set, that selected provider is used.
+2. Otherwise, provider auto-detection order is:
+   1. `GOOGLE_API_KEY`
+   2. `OPENAI_API_KEY`
+   3. `XAI_API_KEY`
+   4. `GITHUB_TOKEN`
+   5. `OLLAMA_API_KEY`
+   6. `OPENWEBUI_API_KEY`
 
-The detected provider automatically uses its own model/base URL/token-env settings from `llm.provider_settings`.
+The active provider uses its own model/base URL/token-env settings from `llm.provider_settings`.
 
 ## Quick Start
 

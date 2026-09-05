@@ -152,6 +152,13 @@ def test_llm_config_detects_provider_with_custom_api_key_env():
     assert resolved.api_key_env == "MY_OPENAI_KEY"
 
 
+def test_llm_config_prefers_selected_provider_when_its_key_is_set():
+    cfg = LLMConfig(provider="github_copilot")
+    resolved = cfg.resolved({"GITHUB_TOKEN": "ghp_test", "OPENAI_API_KEY": "sk-test"})
+    assert resolved.provider == "github_copilot"
+    assert resolved.api_key_env == "GITHUB_TOKEN"
+
+
 def test_source_material():
     sm = SourceMaterial(title="Core Rulebook", file_path="/tmp/core.pdf", page_count=300)
     assert sm.title == "Core Rulebook"
