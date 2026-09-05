@@ -319,13 +319,16 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
             self.active_session_id = settings.session_id
             self.last_campaign_id: str | None = None
             self._session_log_cursor: dict[str, int] = {}
+            self._pending_narrator_echo: dict[str, str] = {}
             self._relay_task: asyncio.Task[None] | None = None
             self._relay_lock = asyncio.Lock()
 
-        async def _sync_session_cursor(self, session_id: str) -> None:
+        async def _sync_session_cursor(self, session_id: str, initialize: bool = True) -> None:
             state = await asyncio.to_thread(mcp.get_session_state, session_id)
             log = (state.get("session") or {}).get("log") or []
-            self._session_log_cursor[session_id] = len(log) if isinstance(log, list) else 0
+            current = self._session_log_cursor.get(session_id, 0)
+            fetched = len(log) if isinstance(log, list) else 0
+            self._session_log_cursor[session_id] = fetched if initialize else max(current, fetched)
             campaign = state.get("campaign") or {}
             campaign_id = str(campaign.get("id", "")).strip()
             if campaign_id:
@@ -365,6 +368,12 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                                     continue
                                 if str(entry.get("role", "")).strip().lower() == "player":
                                     continue
+                                if str(entry.get("role", "")).strip().lower() == "narrator":
+                                    pending = self._pending_narrator_echo.get(session_id, "")
+                                    content = str(entry.get("content", "")).strip()
+                                    if pending and content == pending:
+                                        self._pending_narrator_echo.pop(session_id, None)
+                                        continue
                                 rendered = _format_session_log_entry(entry)
                                 if not rendered:
                                     continue
@@ -457,7 +466,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                                     settings.resume_if_inactive,
                                 )
                                 self.active_session_id = ensured_session_id
-                                await self._sync_session_cursor(ensured_session_id)
+                                await self._sync_session_cursor(ensured_session_id, initialize=True)
                                 if resumed:
                                     reply = f"{reply}\nResumed and attached to session {ensured_session_id}."
                             except Exception as exc:
@@ -465,8 +474,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                                 return
                         else:
                             self.active_session_id = new_session_id
-                    else:
-                        self.active_session_id = new_session_id
+                            await self._sync_session_cursor(new_session_id, initialize=True)
                     if new_campaign_id:
                         self.last_campaign_id = new_campaign_id
                     if reply:
@@ -496,10 +504,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     await message.reply(f"MCP error: {exc}")
                     return
 
-            try:
-                await self._sync_session_cursor(self.active_session_id)
-            except Exception:
-                pass
+            self._pending_narrator_echo[self.active_session_id] = response.strip()
 
             speaker = "Narrator (meta)" if mode == "meta" else "Narrator"
             out = f"**{speaker}:** {response}"

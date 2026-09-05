@@ -1454,7 +1454,9 @@ def session_attach(
         state = _mcp_get_json(mcp_base_url, f"/web/session/{selected_id}")
         if not bool(state.get("is_active")):
             resumed = _mcp_post_json(mcp_base_url, "/web/session/start", {"session_id": selected_id})
-            selected = resumed.get("session") or selected
+            resumed_session = resumed.get("session") or {}
+            if isinstance(resumed_session, dict):
+                selected = {**selected, **resumed_session}
             selected_id = str(selected.get("id", selected_id))
     except Exception as exc:
         console.print(Panel(str(exc), title="[bold red]⚠ MCP session error[/bold red]", border_style="red"))
