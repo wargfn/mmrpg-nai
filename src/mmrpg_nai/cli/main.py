@@ -1360,7 +1360,7 @@ def session_query(
 
 @session_app.command("attach")
 def session_attach(
-    session_id: Optional[str] = typer.Option(None, help="Active session ID or prefix (optional, active sessions only)"),
+    session_id: Optional[str] = typer.Option(None, help="Session ID or prefix (optional)"),
     mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
 ) -> None:
     """Attach CLI to an active MCP web session and chat through it."""
@@ -1373,7 +1373,7 @@ def session_attach(
         raise typer.Exit(1)
 
     sessions = active.get("sessions", [])
-    if not sessions:
+    if not sessions and not session_id:
         console.print("[yellow]No active sessions found on MCP service.[/yellow]")
         raise typer.Exit(1)
 
@@ -1389,6 +1389,23 @@ def session_attach(
             elif len(matches) > 1:
                 console.print("[red]Session prefix matches multiple active sessions; be more specific.[/red]")
                 raise typer.Exit(1)
+        if selected is None:
+            try:
+                bootstrap = _mcp_get_json(mcp_base_url, "/web/bootstrap")
+            except Exception as exc:
+                console.print(Panel(str(exc), title="[bold red]⚠ MCP connection error[/bold red]", border_style="red"))
+                raise typer.Exit(1)
+            all_sessions = bootstrap.get("sessions", []) if isinstance(bootstrap, dict) else []
+            exact_any = next((s for s in all_sessions if s.get("id") == session_id), None)
+            if exact_any is not None:
+                selected = exact_any
+            else:
+                matches_any = [s for s in all_sessions if str(s.get("id", "")).startswith(session_id)]
+                if len(matches_any) == 1:
+                    selected = matches_any[0]
+                elif len(matches_any) > 1:
+                    console.print("[red]Session prefix matches multiple sessions; be more specific.[/red]")
+                    raise typer.Exit(1)
     else:
         table = Table("#", "Session ID", "Campaign ID", "Title", "Players")
         for i, s in enumerate(sessions, 1):
@@ -1414,10 +1431,20 @@ def session_attach(
                 raise typer.Exit(1)
 
     if selected is None:
-        console.print(f"[red]Active session not found: {session_id or '(selection)'}[/red]")
+        console.print(f"[red]Session not found: {session_id or '(selection)'}[/red]")
         raise typer.Exit(1)
 
     selected_id = str(selected.get("id", ""))
+    try:
+        state = _mcp_get_json(mcp_base_url, f"/web/session/{selected_id}")
+        if not bool(state.get("is_active")):
+            resumed = _mcp_post_json(mcp_base_url, "/web/session/start", {"session_id": selected_id})
+            selected = resumed.get("session") or selected
+            selected_id = str(selected.get("id", selected_id))
+    except Exception as exc:
+        console.print(Panel(str(exc), title="[bold red]⚠ MCP session error[/bold red]", border_style="red"))
+        raise typer.Exit(1)
+
     _META_RE = _re.compile(r"^\s*\[(.+)\]\s*$")
     console.print(
         Panel(

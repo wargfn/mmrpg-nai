@@ -56,6 +56,8 @@ def test_session_attach_chats_with_active_session():
             )
         if req.full_url.endswith(f"/web/session/{active_session_id}/chat"):
             return _FakeHTTPResponse({"response": "Narrated: hello", "mode": "narrate", "log": []})
+        if req.full_url.endswith(f"/web/session/{active_session_id}") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": True})
         raise AssertionError(f"Unexpected URL: {req.full_url}")
 
     with patch("urllib.request.urlopen", side_effect=_urlopen):
@@ -65,3 +67,48 @@ def test_session_attach_chats_with_active_session():
     assert result.exit_code == 0, result.output
     assert "Narrated: hello" in result.output
     assert "Detached from active session." in result.output
+
+
+def test_session_attach_can_resume_inactive_session_by_id():
+    base_session_id = "session-old1234"
+    resumed_session_id = "session-new5678"
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": []})
+        if req.full_url.endswith("/web/bootstrap"):
+            return _FakeHTTPResponse(
+                {
+                    "sessions": [
+                        {
+                            "id": base_session_id,
+                            "campaign_id": "campaign-1",
+                            "title": "Session 1",
+                            "user_ids": [],
+                        }
+                    ]
+                }
+            )
+        if req.full_url.endswith(f"/web/session/{base_session_id}") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": False})
+        if req.full_url.endswith("/web/session/start") and req.method == "POST":
+            return _FakeHTTPResponse(
+                {
+                    "session": {
+                        "id": resumed_session_id,
+                        "campaign_id": "campaign-1",
+                        "title": "Session 2",
+                        "user_ids": [],
+                    }
+                }
+            )
+        if req.full_url.endswith(f"/web/session/{resumed_session_id}/chat"):
+            return _FakeHTTPResponse({"response": "Narrated: hello", "mode": "narrate", "log": []})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        with patch("mmrpg_nai.cli.main.Prompt.ask", side_effect=["hello", "quit"]):
+            result = runner.invoke(app, ["session", "attach", "--session-id", base_session_id])
+
+    assert result.exit_code == 0, result.output
+    assert "Narrated: hello" in result.output

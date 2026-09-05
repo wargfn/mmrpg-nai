@@ -360,6 +360,8 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                         for entry in log[last_seen:]:
                             if not isinstance(entry, dict):
                                 continue
+                            if str(entry.get("role", "")).strip().lower() == "player":
+                                continue
                             rendered = _format_session_log_entry(entry)
                             if not rendered:
                                 continue

@@ -397,8 +397,8 @@ mmrpg-nai session query "How much focus does this character have?" --session-id 
 Attach the CLI to an active MCP web session so this terminal can participate in the same live session.
 Use this with a separately running `mmrpg-nai serve` process.
 ```bash
-# Attach by session id/prefix
-mmrpg-nai session attach --session-id <active-session-id>
+# Attach by session id/prefix (active or resumable)
+mmrpg-nai session attach --session-id <session-id>
 
 # Or choose interactively from active sessions
 mmrpg-nai session attach
