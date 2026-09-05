@@ -153,3 +153,22 @@ def test_process_bridge_command_session_start_exact_id_without_campaign_lookup()
     assert active == "sess-1"
     assert campaign == "camp-1"
     assert not any(url.endswith("/campaigns") for url in calls)
+
+
+def test_process_bridge_command_session_start_updates_canonical_campaign_id():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/start"):
+            return _FakeHTTPResponse(
+                {"session": {"id": "sess-1", "title": "Session 1"}, "campaign": {"id": "camp-1-full", "name": "Alpha"}}
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session start camp-1", client, None, None)
+
+    assert handled is True
+    assert "Started session" in (reply or "")
+    assert active == "sess-1"
+    assert campaign == "camp-1-full"

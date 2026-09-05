@@ -1050,6 +1050,7 @@ def session_run(
         for character in party:
             if character.id not in campaign.character_ids:
                 campaign.character_ids.append(character.id)
+        store.campaigns.save(campaign)
 
         # ------------------------------------------------------------------
         # 3. Create a new session for this run

@@ -225,12 +225,13 @@ def process_bridge_command(
             new_session_id = str(session.get("id", "")).strip()
             if not new_session_id:
                 return True, "Session start succeeded but no session id was returned.", active_session_id, campaign_id
-            campaign_name = str(campaign.get("name", campaign_id))
+            resolved_campaign_id = str(campaign.get("id", campaign_id)).strip() or campaign_id
+            campaign_name = str(campaign.get("name", resolved_campaign_id))
             return (
                 True,
                 f"Started session '{session.get('title', 'Session')}' ({new_session_id}) in campaign '{campaign_name}'.",
                 new_session_id,
-                campaign_id,
+                resolved_campaign_id,
             )
 
     return True, "Unknown command. Use /help.", active_session_id, last_campaign_id
