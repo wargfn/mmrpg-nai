@@ -418,6 +418,31 @@ def test_process_bridge_command_session_end_uses_canonical_session_id():
     assert campaign == "camp-2"
 
 
+def test_process_bridge_command_session_end_falls_back_when_state_lookup_fails():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/session-bbb"):
+            raise HTTPError(
+                url=req.full_url,
+                code=404,
+                msg="Not Found",
+                hdrs=None,
+                fp=io.BytesIO(json.dumps({"detail": "Session not found"}).encode("utf-8")),
+            )
+        if req.full_url.endswith("/web/session/session-bbb/end"):
+            return _FakeHTTPResponse({"ended": True})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session end", client, "session-bbb", "camp-2")
+
+    assert handled is True
+    assert "Ended and detached from session session-bbb." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
 def test_process_bridge_command_campaign_list():
     client = MCPWebClient("http://localhost:8000")
 

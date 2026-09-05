@@ -1374,8 +1374,6 @@ def session_attach(
     mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
 ) -> None:
     """Attach CLI to an active MCP web session and chat through it."""
-    import re as _re
-
     try:
         active = _mcp_get_json(mcp_base_url, "/web/active-sessions")
     except Exception as exc:
@@ -1495,7 +1493,6 @@ def session_attach(
         console.print(Panel(str(exc), title="[bold red]⚠ MCP session error[/bold red]", border_style="red"))
         raise typer.Exit(1)
 
-    _META_RE = _re.compile(r"^\s*\[(.+)\]\s*$")
     console.print(
         Panel(
             f"[bold]Attached Session:[/bold] {selected.get('title', '—')} ({selected_id[:8]})\n"
