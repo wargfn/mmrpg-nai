@@ -19,6 +19,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
+from mmrpg_nai import __version__
 from mmrpg_nai.adventure.importer import (
     export_template_schema,
     import_adventure,
@@ -48,6 +49,25 @@ console = Console()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"mmrpg-nai {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _app_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    return None
 
 
 def _get_store(data_dir: str) -> Store:

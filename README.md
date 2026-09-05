@@ -94,7 +94,7 @@ mmrpg-nai session log <session-id>
 ## CLI Reference
 
 ```
-mmrpg-nai [--help]
+mmrpg-nai [--help] [--version]
 
 Commands:
   config     Manage narrator configuration
