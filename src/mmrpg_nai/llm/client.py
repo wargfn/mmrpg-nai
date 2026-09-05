@@ -1,4 +1,4 @@
-"""LLM client wrapping OpenAI-compatible providers (OpenAI/Copilot/Ollama)."""
+"""LLM client for configured OpenAI-compatible providers."""
 
 from __future__ import annotations
 

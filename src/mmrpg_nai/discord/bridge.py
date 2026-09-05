@@ -110,8 +110,8 @@ class MCPWebClient:
         if is_active and not listed:
             raise MCPBridgeError("Session reports active but is not listed in MCP web active sessions.")
         if not resume_if_inactive:
-            if not listed:
-                raise MCPBridgeError("Session is not listed as active in MCP web active sessions.")
+            if not (is_active and listed):
+                raise MCPBridgeError("Session could not be confirmed as active in MCP web active sessions.")
             return session_id, False
         resumed_id = self.resume(session_id)
         if not self.is_session_listed_active(resumed_id):
