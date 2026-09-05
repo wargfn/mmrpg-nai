@@ -393,6 +393,13 @@ def web_session_end(session_id: str) -> WebSessionEndResponse:
             summary, start_prompt = narrator.summarise_session_close(session, campaign)
         except Exception:
             summary, start_prompt = "", ""
+
+    if summary:
+        session.synopsis = summary
+    if start_prompt:
+        session.start_prompt = start_prompt
+    store.sessions.save(session)
+    if narrator is not None and campaign is not None:
         try:
             completed_sessions = [s for s in store.sessions.find(campaign_id=campaign.id) if s.ended_at is not None]
             campaign_progress = narrator.summarise_campaign_progress(campaign, completed_sessions)
@@ -400,12 +407,6 @@ def web_session_end(session_id: str) -> WebSessionEndResponse:
             store.campaigns.save(campaign)
         except Exception:
             campaign_progress = ""
-
-    if summary:
-        session.synopsis = summary
-    if start_prompt:
-        session.start_prompt = start_prompt
-    store.sessions.save(session)
     return WebSessionEndResponse(
         ended=True,
         summary=summary,
