@@ -56,3 +56,25 @@ def test_serve_discord_passes_settings_to_runner():
     assert settings.channel_id == 12345
     assert settings.mcp_base_url == "http://127.0.0.1:9000"
     assert settings.command_prefix == "!nai"
+
+
+def test_serve_discord_allows_missing_session_id():
+    captured = {}
+
+    def _fake_run(settings):
+        captured["settings"] = settings
+
+    with patch.dict(os.environ, {"DISCORD_BOT_TOKEN": "token"}):
+        with patch("mmrpg_nai.discord.bridge.run_discord_bridge", side_effect=_fake_run):
+            result = runner.invoke(
+                app,
+                [
+                    "serve-discord",
+                    "--channel-id",
+                    "12345",
+                ],
+            )
+
+    assert result.exit_code == 0, result.output
+    settings = captured["settings"]
+    assert settings.session_id is None

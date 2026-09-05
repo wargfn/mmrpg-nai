@@ -9,7 +9,13 @@ from unittest.mock import patch
 
 import pytest
 
-from mmrpg_nai.discord.bridge import MCPBridgeError, MCPSessionInactiveError, MCPWebClient, split_discord_message
+from mmrpg_nai.discord.bridge import (
+    MCPBridgeError,
+    MCPSessionInactiveError,
+    MCPWebClient,
+    process_bridge_command,
+    split_discord_message,
+)
 
 
 class _FakeHTTPResponse:
@@ -68,3 +74,51 @@ def test_mcp_client_chat_other_http_error():
     with patch("urllib.request.urlopen", side_effect=err):
         with pytest.raises(MCPBridgeError, match="HTTP 400"):
             client.chat("sid", "hello")
+
+
+def test_mcp_client_create_campaign_and_start_session():
+    client = MCPWebClient("http://localhost:8000")
+    calls = []
+
+    def _urlopen(req, timeout=15):
+        calls.append((req.full_url, req.method, json.loads(req.data.decode("utf-8")) if req.data else None))
+        if req.full_url.endswith("/campaigns"):
+            return _FakeHTTPResponse({"id": "camp-1", "name": "New Campaign"})
+        if req.full_url.endswith("/web/session/start"):
+            return _FakeHTTPResponse({"session": {"id": "sess-1", "title": "Session 1"}, "campaign": {"id": "camp-1"}})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        campaign = client.create_campaign("New Campaign")
+        started = client.start_session("camp-1", title="Session 1")
+
+    assert campaign["id"] == "camp-1"
+    assert started["session"]["id"] == "sess-1"
+    assert calls[0][0].endswith("/campaigns")
+    assert calls[1][0].endswith("/web/session/start")
+
+
+def test_process_bridge_command_campaign_then_start_session():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/campaigns") and req.method == "POST":
+            return _FakeHTTPResponse({"id": "camp-1", "name": "Alpha"})
+        if req.full_url.endswith("/web/session/start"):
+            return _FakeHTTPResponse(
+                {"session": {"id": "sess-1", "title": "Session 1"}, "campaign": {"id": "camp-1", "name": "Alpha"}}
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, last_campaign = process_bridge_command("/campaign new Alpha", client, None, None)
+        assert handled is True
+        assert "Created campaign" in (reply or "")
+        assert active is None
+        assert last_campaign == "camp-1"
+
+        handled2, reply2, active2, last_campaign2 = process_bridge_command("/session start", client, active, last_campaign)
+        assert handled2 is True
+        assert "Started session" in (reply2 or "")
+        assert active2 == "sess-1"
+        assert last_campaign2 == "camp-1"

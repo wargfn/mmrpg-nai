@@ -1762,7 +1762,7 @@ def serve(
 
 @app.command("serve-discord")
 def serve_discord(
-    session_id: str = typer.Option(..., help="Active session ID (or a resumable session ID)"),
+    session_id: Optional[str] = typer.Option(None, help="Active/resumable session ID (optional)"),
     channel_id: int = typer.Option(..., help="Discord channel ID to listen and post in"),
     mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
     token_env: str = typer.Option("DISCORD_BOT_TOKEN", help="Environment variable containing Discord bot token"),
@@ -1784,10 +1784,8 @@ def serve_discord(
         console.print(f"[red]{token_env} is not set.[/red]")
         raise typer.Exit(1)
 
-    console.print(
-        f"[dim]Starting Discord bridge on channel {channel_id} -> session {session_id} "
-        f"via {mcp_base_url}[/dim]"
-    )
+    target = session_id or "(none; use /campaign new and /session start in Discord)"
+    console.print(f"[dim]Starting Discord bridge on channel {channel_id} -> session {target} via {mcp_base_url}[/dim]")
     run_discord_bridge(
         DiscordBridgeSettings(
             discord_token=token_value,

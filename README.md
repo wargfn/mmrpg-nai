@@ -682,7 +682,7 @@ mmrpg-nai serve --host 0.0.0.0 --port 9000
 ### `mmrpg-nai serve-discord` — Discord bridge process
 
 Run a standalone Discord bot process that listens to one Discord channel, forwards messages
-to an active MCP session, and posts Narrator responses back into the same channel.
+to an MCP session, and posts Narrator responses back into the same channel.
 
 ```bash
 # 1) Start MCP server
@@ -690,15 +690,25 @@ mmrpg-nai serve
 
 # 2) In another process/shell, start Discord bridge
 export DISCORD_BOT_TOKEN=...
+mmrpg-nai serve-discord --channel-id <discord-channel-id>
+
+# Optional: pre-bind to an existing session
 mmrpg-nai serve-discord --session-id <session-id> --channel-id <discord-channel-id>
 ```
 
 If the session is no longer active in MCP memory, the bridge can auto-resume it (default enabled)
 by creating a follow-up active session via `/web/session/start`.
 
+If no session is set, control the bridge from Discord with commands:
+- `/campaign new <name>`
+- `/session start [campaign-id-or-prefix] [title]`
+- `/session use <session-id>`
+- `/session status`
+- `/help`
+
 | Option | Default | Description |
 |---|---|---|
-| `--session-id` | required | Active or resumable session ID |
+| `--session-id` | optional | Active or resumable session ID |
 | `--channel-id` | required | Discord channel ID to consume and post messages |
 | `--mcp-base-url` | `http://127.0.0.1:8000` | MCP REST base URL |
 | `--token-env` | `DISCORD_BOT_TOKEN` | Env var with Discord bot token |
