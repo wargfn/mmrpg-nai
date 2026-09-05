@@ -687,7 +687,7 @@ mmrpg-nai serve --background
 |---|---|---|
 | `--host` | `127.0.0.1` | Bind host |
 | `--port` | `8000` | Bind port |
-| `--background/--foreground` | `--foreground` | Run as a detached background process |
+| `--background/--foreground` | foreground mode | Run as a detached background process |
 
 **API docs:** `http://127.0.0.1:8000/docs` (Swagger UI)
 
