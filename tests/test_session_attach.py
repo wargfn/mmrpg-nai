@@ -151,3 +151,26 @@ def test_session_attach_errors_when_state_active_but_not_listed():
     assert result.exit_code != 0
     assert "Session reports active but is not listed in active sessions." in result.output
     assert started_called["value"] is False
+
+
+def test_session_attach_uses_canonical_session_id_from_state():
+    requested_session_id = "sess-prefix"
+    canonical_session_id = "session-1234abcd"
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": [{"id": canonical_session_id}]})
+        if req.full_url.endswith(f"/web/session/{requested_session_id}") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": True, "session": {"id": canonical_session_id}})
+        if req.full_url.endswith(f"/web/session/{canonical_session_id}") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": True, "session": {"id": canonical_session_id}})
+        if req.full_url.endswith(f"/web/session/{canonical_session_id}/chat"):
+            return _FakeHTTPResponse({"response": "Narrated: hello", "mode": "narrate", "log": []})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        with patch("mmrpg_nai.cli.main.Prompt.ask", side_effect=["hello", "quit"]):
+            result = runner.invoke(app, ["session", "attach", "--session-id", requested_session_id])
+
+    assert result.exit_code == 0, result.output
+    assert "Narrated: hello" in result.output

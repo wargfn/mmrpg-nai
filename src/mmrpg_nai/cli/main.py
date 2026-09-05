@@ -1462,6 +1462,11 @@ def session_attach(
     selected_id = str(selected.get("id", ""))
     try:
         state = _mcp_get_json(mcp_base_url, f"/web/session/{selected_id}")
+        state_session = state.get("session") or {}
+        canonical_session_id = str(state_session.get("id", "")).strip()
+        if canonical_session_id:
+            selected = {**selected, **state_session}
+            selected_id = canonical_session_id
         listed = _mcp_session_listed_active(mcp_base_url, selected_id)
         is_active = bool(state.get("is_active"))
         if is_active and not listed:

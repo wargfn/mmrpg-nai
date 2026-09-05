@@ -67,7 +67,8 @@ Provider selection precedence:
    5. `ollama`
    6. `openwebui`
 
-The active provider uses its own model/base URL/token-env settings from `llm.provider_settings`.
+The active provider uses its own model/base URL/token-env settings from `llm.provider_settings`.  
+When `llm.api_key_env` is one of the managed provider env vars, top-level `llm.model`, `llm.api_base`, `llm.api_key_env`, `llm.max_tokens`, and `llm.temperature` are reconciled back to the selected provider profile values.
 
 ## Quick Start
 
