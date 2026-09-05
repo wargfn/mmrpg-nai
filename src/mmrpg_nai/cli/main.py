@@ -1852,6 +1852,12 @@ def serve_discord(
     session_id: Optional[str] = typer.Option(None, help="Active/resumable session ID (optional)"),
     channel_id: int = typer.Option(..., help="Discord channel ID to listen and post in"),
     mcp_base_url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running MCP service"),
+    mcp_timeout_seconds: float = typer.Option(
+        120.0,
+        "--mcp-timeout-seconds",
+        min=1.0,
+        help="Timeout for MCP HTTP requests from Discord bridge",
+    ),
     token_env: str = typer.Option("DISCORD_BOT_TOKEN", help="Environment variable containing Discord bot token"),
     resume_if_inactive: bool = typer.Option(
         True,
@@ -1879,6 +1885,7 @@ def serve_discord(
             channel_id=channel_id,
             session_id=session_id,
             mcp_base_url=mcp_base_url,
+            mcp_timeout_seconds=mcp_timeout_seconds,
             resume_if_inactive=resume_if_inactive,
             command_prefix=command_prefix,
         )

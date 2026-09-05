@@ -40,6 +40,8 @@ class MCPWebClient:
             status = getattr(exc, "code", 500)
             raise MCPBridgeError(f"HTTP {status}: {detail}") from exc
         except urlerror.URLError as exc:
+            if "timed out" in str(exc.reason).lower():
+                raise MCPBridgeError(f"MCP request timed out after {self.timeout_seconds:.0f}s") from exc
             raise MCPBridgeError(f"Could not reach MCP service at {self.base_url}: {exc}") from exc
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -66,6 +68,8 @@ class MCPWebClient:
                 raise MCPSessionInactiveError(detail) from exc
             raise MCPBridgeError(f"HTTP {status}: {detail}") from exc
         except urlerror.URLError as exc:
+            if "timed out" in str(exc.reason).lower():
+                raise MCPBridgeError(f"MCP request timed out after {self.timeout_seconds:.0f}s") from exc
             raise MCPBridgeError(f"Could not reach MCP service at {self.base_url}: {exc}") from exc
 
     def chat(self, session_id: str, message: str) -> tuple[str, str]:
@@ -116,6 +120,7 @@ class DiscordBridgeSettings:
     channel_id: int
     session_id: str | None = None
     mcp_base_url: str = "http://127.0.0.1:8000"
+    mcp_timeout_seconds: float = 120.0
     resume_if_inactive: bool = True
     command_prefix: str = ""
 
@@ -272,7 +277,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
     except ImportError as exc:
         raise RuntimeError("discord.py is required. Install with: pip install discord.py") from exc
 
-    mcp = MCPWebClient(settings.mcp_base_url)
+    mcp = MCPWebClient(settings.mcp_base_url, timeout_seconds=settings.mcp_timeout_seconds)
 
     class _DiscordBridgeClient(discord.Client):
         def __init__(self) -> None:

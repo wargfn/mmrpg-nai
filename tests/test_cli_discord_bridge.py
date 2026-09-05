@@ -45,6 +45,8 @@ def test_serve_discord_passes_settings_to_runner():
                     "12345",
                     "--mcp-base-url",
                     "http://127.0.0.1:9000",
+                    "--mcp-timeout-seconds",
+                    "180",
                     "--command-prefix",
                     "!nai",
                 ],
@@ -55,6 +57,7 @@ def test_serve_discord_passes_settings_to_runner():
     assert settings.session_id == "session-1"
     assert settings.channel_id == 12345
     assert settings.mcp_base_url == "http://127.0.0.1:9000"
+    assert settings.mcp_timeout_seconds == 180.0
     assert settings.command_prefix == "!nai"
 
 
@@ -78,3 +81,4 @@ def test_serve_discord_allows_missing_session_id():
     assert result.exit_code == 0, result.output
     settings = captured["settings"]
     assert settings.session_id is None
+    assert settings.mcp_timeout_seconds == 120.0

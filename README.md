@@ -728,6 +728,7 @@ The bridge also accepts CLI-style prefixed commands like `/mmrpg-nai campaign li
 | `--session-id` | optional | Active or resumable session ID |
 | `--channel-id` | required | Discord channel ID to consume and post messages |
 | `--mcp-base-url` | `http://127.0.0.1:8000` | MCP REST base URL |
+| `--mcp-timeout-seconds` | `120` | MCP request timeout for bridge chat/commands |
 | `--token-env` | `DISCORD_BOT_TOKEN` | Env var with Discord bot token |
 | `--resume-if-inactive/--no-resume-if-inactive` | enabled | Auto-resume session when inactive |
 | `--command-prefix` | empty | Optional prefix filter (e.g. `!nai`) |

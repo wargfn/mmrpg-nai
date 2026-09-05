@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 import pytest
@@ -73,6 +73,13 @@ def test_mcp_client_chat_other_http_error():
     )
     with patch("urllib.request.urlopen", side_effect=err):
         with pytest.raises(MCPBridgeError, match="HTTP 400"):
+            client.chat("sid", "hello")
+
+
+def test_mcp_client_chat_timeout_error():
+    client = MCPWebClient("http://localhost:8000", timeout_seconds=42)
+    with patch("urllib.request.urlopen", side_effect=URLError("timed out")):
+        with pytest.raises(MCPBridgeError, match="timed out after 42s"):
             client.chat("sid", "hello")
 
 
