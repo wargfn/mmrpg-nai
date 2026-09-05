@@ -575,6 +575,7 @@ def test_process_bridge_command_channel_clear_alias():
 @pytest.mark.asyncio
 async def test_clear_discord_channel_history_uses_non_bulk_purge():
     calls = []
+    after = object()
     before = object()
 
     class _FakeChannel:
@@ -582,10 +583,10 @@ async def test_clear_discord_channel_history_uses_non_bulk_purge():
             calls.append(kwargs)
             return ("a", "b", "c")
 
-    deleted_count = await clear_discord_channel_history(_FakeChannel(), before=before)
+    deleted_count = await clear_discord_channel_history(_FakeChannel(), after=after, before=before)
 
     assert deleted_count == 3
-    assert calls == [{"limit": None, "before": before, "bulk": False}]
+    assert calls == [{"limit": None, "after": after, "before": before, "bulk": False}]
 
 
 def test_format_session_log_entry():
