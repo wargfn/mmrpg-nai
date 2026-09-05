@@ -304,12 +304,15 @@ def process_bridge_command(
         if action == "end":
             if not active_session_id:
                 return True, "No active session to end.", active_session_id, last_campaign_id
-            ended = mcp.end_session(active_session_id)
+            state = mcp.get_session_state(active_session_id)
+            session = state.get("session") or {}
+            target_session_id = str(session.get("id", "")).strip() or active_session_id
+            ended = mcp.end_session(target_session_id)
             if bool(ended.get("ended")):
-                return True, f"Ended and detached from session {active_session_id}.", None, last_campaign_id
+                return True, f"Ended and detached from session {target_session_id}.", None, last_campaign_id
             return (
                 True,
-                f"Could not end session {active_session_id}; still attached.",
+                f"Could not end session {target_session_id}; still attached.",
                 active_session_id,
                 last_campaign_id,
             )

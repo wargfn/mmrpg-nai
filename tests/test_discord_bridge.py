@@ -356,6 +356,8 @@ def test_process_bridge_command_session_end_detaches_active():
     client = MCPWebClient("http://localhost:8000")
 
     def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/session-bbb"):
+            return _FakeHTTPResponse({"session": {"id": "session-bbb"}})
         if req.full_url.endswith("/web/session/session-bbb/end"):
             return _FakeHTTPResponse({"ended": True})
         raise AssertionError(f"Unexpected URL: {req.full_url}")
@@ -382,6 +384,8 @@ def test_process_bridge_command_session_end_keeps_attachment_when_not_ended():
     client = MCPWebClient("http://localhost:8000")
 
     def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/session-bbb"):
+            return _FakeHTTPResponse({"session": {"id": "session-bbb"}})
         if req.full_url.endswith("/web/session/session-bbb/end"):
             return _FakeHTTPResponse({"ended": False})
         raise AssertionError(f"Unexpected URL: {req.full_url}")
@@ -392,6 +396,25 @@ def test_process_bridge_command_session_end_keeps_attachment_when_not_ended():
     assert handled is True
     assert "Could not end session session-bbb; still attached." in (reply or "")
     assert active == "session-bbb"
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_end_uses_canonical_session_id():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/sess-prefix"):
+            return _FakeHTTPResponse({"session": {"id": "session-canonical-1"}})
+        if req.full_url.endswith("/web/session/session-canonical-1/end"):
+            return _FakeHTTPResponse({"ended": True})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session end", client, "sess-prefix", "camp-2")
+
+    assert handled is True
+    assert "Ended and detached from session session-canonical-1." in (reply or "")
+    assert active is None
     assert campaign == "camp-2"
 
 

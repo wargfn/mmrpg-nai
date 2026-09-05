@@ -4,7 +4,7 @@ Marvel Multiverse Role-Playing Game Narrator AI Tools
 ## Overview
 
 `mmrpg-nai` is an AI-powered Narrator assistant for the **Marvel Multiverse Role-Playing Game (MMRPG)**.  
-It supports **Google AI Studio**, **OpenAI**, **GitHub Copilot**, and **OpenWebUI/Ollama** (OpenAI-compatible endpoints) to help you plan campaigns, run interactive sessions, manage characters and equipment, import adventures, and more — all from your terminal.
+It supports **Google AI Studio**, **OpenAI**, **xAI Grok**, **GitHub Copilot**, and **OpenWebUI/Ollama** (OpenAI-compatible endpoints) to help you plan campaigns, run interactive sessions, manage characters and equipment, import adventures, and more — all from your terminal.
 
 ## Features
 
