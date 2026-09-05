@@ -481,8 +481,12 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
 
         async def _capture_session_clear_boundary(self) -> None:
             channel = self.get_channel(settings.channel_id)
-            if channel is None or not hasattr(channel, "history"):
-                self._session_clear_boundary = None
+            if channel is None:
+                try:
+                    channel = await self.fetch_channel(settings.channel_id)
+                except Exception:
+                    return
+            if not hasattr(channel, "history"):
                 return
             boundary = None
             async for entry in channel.history(limit=1):
@@ -623,11 +627,21 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             await message.reply("No active session to clear history for.")
                             return
                         permissions_for = getattr(message.channel, "permissions_for", None)
-                        if callable(permissions_for):
-                            permissions = permissions_for(message.author)
-                            if not getattr(permissions, "manage_messages", False):
-                                await message.reply("You need Manage Messages permission to clear session history.")
-                                return
+                        if not callable(permissions_for):
+                            await message.reply("Channel permissions are unavailable; cannot clear session history.")
+                            return
+                        permissions = permissions_for(message.author)
+                        if not getattr(permissions, "manage_messages", False):
+                            await message.reply("You need Manage Messages permission to clear session history.")
+                            return
+                        bot_subject = getattr(getattr(message, "guild", None), "me", None) or self.user
+                        bot_permissions = permissions_for(bot_subject) if bot_subject is not None else None
+                        if not bot_permissions or not getattr(bot_permissions, "manage_messages", False):
+                            await message.reply("Bot needs Manage Messages permission to clear session history.")
+                            return
+                        if not getattr(bot_permissions, "read_message_history", False):
+                            await message.reply("Bot needs Read Message History permission to clear session history.")
+                            return
                         try:
                             await clear_discord_channel_history(
                                 message.channel,
