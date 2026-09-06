@@ -6,6 +6,7 @@ import asyncio
 import json
 import shlex
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
@@ -196,20 +197,59 @@ def split_discord_message(text: str, limit: int = 1800) -> list[str]:
     return chunks
 
 
-async def clear_discord_channel_history(channel: Any, *, exclude_message: Any | None = None) -> int:
+@dataclass
+class DiscordChannelClearResult:
+    deleted_count: int
+    failed_count: int
+    command_deleted: bool
+
+
+async def clear_discord_channel_history(
+    channel: Any, *, exclude_message: Any | None = None
+) -> DiscordChannelClearResult:
     deleted = 0
+    failed = 0
+    command_deleted = exclude_message is None
     excluded_id = getattr(exclude_message, "id", None)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    recent_messages: list[Any] = []
+    older_messages: list[tuple[Any, bool]] = []
     async for item in channel.history(limit=None):
-        if exclude_message is not None and (
+        is_command_message = exclude_message is not None and (
             item is exclude_message or (excluded_id is not None and getattr(item, "id", None) == excluded_id)
-        ):
+        )
+        created_at = getattr(item, "created_at", None)
+        if created_at is not None and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if created_at is not None and created_at >= cutoff:
+            recent_messages.append(item)
             continue
+        older_messages.append((item, is_command_message))
+
+    if recent_messages:
+        recent_ids = {id(item) for item in recent_messages}
+
+        def _recent_check(item: Any) -> bool:
+            return id(item) in recent_ids
+
+        purged = await channel.purge(limit=None, check=_recent_check)
+        deleted += len(purged)
+        if exclude_message is not None:
+            command_deleted = any(
+                item is exclude_message or (excluded_id is not None and getattr(item, "id", None) == excluded_id)
+                for item in purged
+            )
+
+    for item, is_command_message in older_messages:
         try:
             await item.delete()
         except Exception:
+            failed += 1
             continue
         deleted += 1
-    return deleted
+        if is_command_message:
+            command_deleted = True
+    return DiscordChannelClearResult(deleted, failed, command_deleted)
 
 
 @dataclass
@@ -629,14 +669,17 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             await message.reply("Bot needs Read Message History permission to clear the channel.")
                             return
                         try:
-                            await clear_discord_channel_history(message.channel, exclude_message=message)
+                            cleared = await clear_discord_channel_history(message.channel, exclude_message=message)
                         except Exception as exc:
                             await message.reply(f"Could not clear channel: {exc}")
                             return
-                        try:
-                            await message.delete()
-                        except Exception as exc:
-                            await message.reply(f"Channel history cleared, but could not delete this command message: {exc}")
+                        if not cleared.command_deleted:
+                            await message.reply("Channel history cleared, but this command message could not be deleted.")
+                            return
+                        if cleared.failed_count:
+                            await message.reply(
+                                f"Channel clear completed with {cleared.failed_count} message deletion failure(s)."
+                            )
                             return
                         return
                     if needs_activation and new_session_id:
