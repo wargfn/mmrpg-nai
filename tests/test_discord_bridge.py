@@ -845,6 +845,90 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
     assert channel.deleted == ["m1"]
 
 
+@pytest.mark.asyncio
+async def test_discord_bridge_clear_command_reports_partial_success_when_command_delete_fails():
+    captured = {}
+
+    class _FakeIntents:
+        message_content = False
+
+        @staticmethod
+        def default():
+            return _FakeIntents()
+
+    class _FakeClientBase:
+        last_instance = None
+
+        def __init__(self, *, intents):
+            self.intents = intents
+            self.user = types.SimpleNamespace(bot=True, id=999)
+            _FakeClientBase.last_instance = self
+
+        def run(self, token):
+            captured["token"] = token
+
+        async def close(self):
+            return None
+
+    fake_discord = types.SimpleNamespace(Client=_FakeClientBase, Intents=_FakeIntents)
+    user_permissions = types.SimpleNamespace(manage_messages=True)
+    bot_permissions = types.SimpleNamespace(manage_messages=True, read_message_history=True)
+
+    class _FakeChannel:
+        id = 12345
+
+        def __init__(self):
+            self.deleted = []
+
+        def permissions_for(self, subject):
+            if subject is captured["message"].author:
+                return user_permissions
+            return bot_permissions
+
+        def history(self, **kwargs):
+            async def _iter():
+                yield types.SimpleNamespace(delete=self._delete_factory("m1"))
+
+            return _iter()
+
+        def _delete_factory(self, name):
+            async def _delete():
+                self.deleted.append(name)
+
+            return _delete
+
+    class _FakeMessage:
+        def __init__(self, channel):
+            self.author = types.SimpleNamespace(bot=False, id=1)
+            self.channel = channel
+            self.content = "/clear"
+            self.guild = types.SimpleNamespace(me=types.SimpleNamespace(id=2))
+            self.deleted = False
+            self.replies = []
+
+        async def reply(self, text):
+            self.replies.append(text)
+
+        async def delete(self):
+            raise RuntimeError("cannot delete command")
+
+    with patch.dict(sys.modules, {"discord": fake_discord}):
+        from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+        run_discord_bridge(DiscordBridgeSettings(discord_token="token", channel_id=12345))
+
+    client = _FakeClientBase.last_instance
+    channel = _FakeChannel()
+    message = _FakeMessage(channel)
+    captured["message"] = message
+
+    await client.on_message(message)
+
+    assert channel.deleted == ["m1"]
+    assert message.deleted is False
+    assert message.replies == ["Channel history cleared, but could not delete this command message: cannot delete command"]
+
+
 def test_format_session_log_entry():
     assert _format_session_log_entry({"role": "player", "content": "hello"}) == "**Player:** hello"
     assert _format_session_log_entry({"role": "narrator", "content": "world"}) == "**Narrator:** world"

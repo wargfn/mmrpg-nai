@@ -630,9 +630,13 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             return
                         try:
                             await clear_discord_channel_history(message.channel, exclude_message=message)
-                            await message.delete()
                         except Exception as exc:
                             await message.reply(f"Could not clear channel: {exc}")
+                            return
+                        try:
+                            await message.delete()
+                        except Exception as exc:
+                            await message.reply(f"Channel history cleared, but could not delete this command message: {exc}")
                             return
                         return
                     if needs_activation and new_session_id:
