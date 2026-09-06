@@ -198,8 +198,11 @@ def split_discord_message(text: str, limit: int = 1800) -> list[str]:
 
 
 async def clear_discord_channel_history(channel: Any) -> int:
-    deleted = await channel.purge(limit=None, bulk=False)
-    return len(deleted)
+    deleted = 0
+    async for item in channel.history(limit=None):
+        await item.delete()
+        deleted += 1
+    return deleted
 
 
 @dataclass

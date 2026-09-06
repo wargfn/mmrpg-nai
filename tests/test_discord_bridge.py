@@ -575,18 +575,29 @@ def test_process_bridge_command_channel_clear_alias():
 
 
 @pytest.mark.asyncio
-async def test_clear_discord_channel_history_uses_non_bulk_purge():
-    calls = []
+async def test_clear_discord_channel_history_deletes_full_history():
+    deleted = []
+
+    class _FakeHistoryMessage:
+        def __init__(self, name):
+            self.name = name
+
+        async def delete(self):
+            deleted.append(self.name)
 
     class _FakeChannel:
-        async def purge(self, **kwargs):
-            calls.append(kwargs)
-            return ("a", "b", "c")
+        def history(self, **kwargs):
+            async def _iter():
+                yield _FakeHistoryMessage("a")
+                yield _FakeHistoryMessage("b")
+                yield _FakeHistoryMessage("c")
+
+            return _iter()
 
     deleted_count = await clear_discord_channel_history(_FakeChannel())
 
     assert deleted_count == 3
-    assert calls == [{"limit": None, "bulk": False}]
+    assert deleted == ["a", "b", "c"]
 
 
 @pytest.mark.asyncio
@@ -629,16 +640,25 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
         id = 12345
 
         def __init__(self):
-            self.purge_calls = []
+            self.deleted = []
 
         def permissions_for(self, subject):
             if subject is captured["message"].author:
                 return user_permissions
             return bot_permissions
 
-        async def purge(self, **kwargs):
-            self.purge_calls.append(kwargs)
-            return ("deleted",)
+        def history(self, **kwargs):
+            async def _iter():
+                yield types.SimpleNamespace(delete=self._delete_factory("m1"))
+                yield types.SimpleNamespace(delete=self._delete_factory("m2"))
+
+            return _iter()
+
+        def _delete_factory(self, name):
+            async def _delete():
+                self.deleted.append(name)
+
+            return _delete
 
     class _FakeMessage:
         def __init__(self, channel):
@@ -671,7 +691,7 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
     assert captured["token"] == "token"
     assert message.replies == []
     assert message.deleted is True
-    assert channel.purge_calls == [{"limit": None, "bulk": False}]
+    assert channel.deleted == ["m1", "m2"]
 
 
 @pytest.mark.asyncio
@@ -707,16 +727,24 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
         id = 12345
 
         def __init__(self):
-            self.purge_calls = []
+            self.deleted = []
 
         def permissions_for(self, subject):
             if subject is captured["message"].author:
                 return user_permissions
             return bot_permissions
 
-        async def purge(self, **kwargs):
-            self.purge_calls.append(kwargs)
-            return ()
+        def history(self, **kwargs):
+            async def _iter():
+                yield types.SimpleNamespace(delete=self._delete_factory("m1"))
+
+            return _iter()
+
+        def _delete_factory(self, name):
+            async def _delete():
+                self.deleted.append(name)
+
+            return _delete
 
     class _FakeMessage:
         def __init__(self, channel):
@@ -747,7 +775,7 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
 
     assert message.replies == []
     assert message.deleted is True
-    assert channel.purge_calls == [{"limit": None, "bulk": False}]
+    assert channel.deleted == ["m1"]
 
 
 def test_format_session_log_entry():
