@@ -197,10 +197,13 @@ def split_discord_message(text: str, limit: int = 1800) -> list[str]:
     return chunks
 
 
-async def clear_discord_channel_history(channel: Any) -> int:
+async def clear_discord_channel_history(channel: Any, *, before: Any | None = None) -> int:
     deleted = 0
-    async for item in channel.history(limit=None):
-        await item.delete()
+    async for item in channel.history(limit=None, before=before):
+        try:
+            await item.delete()
+        except Exception:
+            continue
         deleted += 1
     return deleted
 
@@ -622,7 +625,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             await message.reply("Bot needs Read Message History permission to clear the channel.")
                             return
                         try:
-                            await clear_discord_channel_history(message.channel)
+                            await clear_discord_channel_history(message.channel, before=message)
                             with contextlib.suppress(Exception):
                                 await message.delete()
                         except Exception as exc:

@@ -577,6 +577,7 @@ def test_process_bridge_command_channel_clear_alias():
 @pytest.mark.asyncio
 async def test_clear_discord_channel_history_deletes_full_history():
     deleted = []
+    calls = []
 
     class _FakeHistoryMessage:
         def __init__(self, name):
@@ -587,6 +588,7 @@ async def test_clear_discord_channel_history_deletes_full_history():
 
     class _FakeChannel:
         def history(self, **kwargs):
+            calls.append(kwargs)
             async def _iter():
                 yield _FakeHistoryMessage("a")
                 yield _FakeHistoryMessage("b")
@@ -597,7 +599,37 @@ async def test_clear_discord_channel_history_deletes_full_history():
     deleted_count = await clear_discord_channel_history(_FakeChannel())
 
     assert deleted_count == 3
+    assert calls == [{"limit": None, "before": None}]
     assert deleted == ["a", "b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_clear_discord_channel_history_skips_delete_failures():
+    deleted = []
+
+    class _FakeHistoryMessage:
+        def __init__(self, name, fail=False):
+            self.name = name
+            self.fail = fail
+
+        async def delete(self):
+            if self.fail:
+                raise RuntimeError("cannot delete")
+            deleted.append(self.name)
+
+    class _FakeChannel:
+        def history(self, **kwargs):
+            async def _iter():
+                yield _FakeHistoryMessage("a")
+                yield _FakeHistoryMessage("b", fail=True)
+                yield _FakeHistoryMessage("c")
+
+            return _iter()
+
+    deleted_count = await clear_discord_channel_history(_FakeChannel())
+
+    assert deleted_count == 2
+    assert deleted == ["a", "c"]
 
 
 @pytest.mark.asyncio
@@ -641,6 +673,7 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
 
         def __init__(self):
             self.deleted = []
+            self.history_calls = []
 
         def permissions_for(self, subject):
             if subject is captured["message"].author:
@@ -648,6 +681,7 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
             return bot_permissions
 
         def history(self, **kwargs):
+            self.history_calls.append(kwargs)
             async def _iter():
                 yield types.SimpleNamespace(delete=self._delete_factory("m1"))
                 yield types.SimpleNamespace(delete=self._delete_factory("m2"))
@@ -691,6 +725,7 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
     assert captured["token"] == "token"
     assert message.replies == []
     assert message.deleted is True
+    assert channel.history_calls == [{"limit": None, "before": message}]
     assert channel.deleted == ["m1", "m2"]
 
 
@@ -728,6 +763,7 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
 
         def __init__(self):
             self.deleted = []
+            self.history_calls = []
 
         def permissions_for(self, subject):
             if subject is captured["message"].author:
@@ -735,6 +771,7 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
             return bot_permissions
 
         def history(self, **kwargs):
+            self.history_calls.append(kwargs)
             async def _iter():
                 yield types.SimpleNamespace(delete=self._delete_factory("m1"))
 
@@ -775,6 +812,7 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
 
     assert message.replies == []
     assert message.deleted is True
+    assert channel.history_calls == [{"limit": None, "before": message}]
     assert channel.deleted == ["m1"]
 
 
