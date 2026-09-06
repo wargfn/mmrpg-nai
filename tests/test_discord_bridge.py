@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import sys
+import types
+from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
@@ -14,6 +17,7 @@ from mmrpg_nai.discord.bridge import (
     MCPSessionInactiveError,
     MCPWebClient,
     _format_session_log_entry,
+    clear_discord_channel_history,
     process_bridge_command,
     split_discord_message,
 )
@@ -380,6 +384,24 @@ def test_process_bridge_command_session_end_without_active():
     assert campaign == "camp-2"
 
 
+def test_process_bridge_command_session_detach_unsets_active():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/session detach", client, "session-bbb", "camp-2")
+    assert handled is True
+    assert "Detached from session session-bbb." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_detach_without_active():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/session detach", client, None, "camp-2")
+    assert handled is True
+    assert "No active session to detach." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
 def test_process_bridge_command_session_end_keeps_attachment_when_not_ended():
     client = MCPWebClient("http://localhost:8000")
 
@@ -512,6 +534,487 @@ def test_process_bridge_command_session_start_title_uses_last_campaign_when_ref_
     assert "Started session" in (reply or "")
     assert active == "sess-1"
     assert campaign == "camp-1"
+
+
+def test_process_bridge_command_session_run_starts_session():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/start"):
+            payload = json.loads(req.data.decode("utf-8"))
+            assert payload == {"campaign_id": "camp-1", "title": "Night Shift"}
+            return _FakeHTTPResponse(
+                {"session": {"id": "sess-9", "title": "Night Shift"}, "campaign": {"id": "camp-1", "name": "Alpha"}}
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session run camp-1 Night Shift", client, None, None)
+
+    assert handled is True
+    assert "Started session 'Night Shift' (sess-9) in campaign 'Alpha'." == reply
+    assert active == "sess-9"
+    assert campaign == "camp-1"
+
+
+def test_process_bridge_command_clear_channel_command():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/clear", client, "session-bbb", "camp-2")
+    assert handled is True
+    assert reply is None
+    assert active == "session-bbb"
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_channel_clear_alias():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/channel clear", client, "session-bbb", "camp-2")
+    assert handled is True
+    assert reply is None
+    assert active == "session-bbb"
+    assert campaign == "camp-2"
+
+
+@pytest.mark.asyncio
+async def test_clear_discord_channel_history_deletes_full_history():
+    deleted = []
+    purged = []
+    calls = []
+    purges = []
+    now = datetime.now(timezone.utc)
+
+    class _FakeHistoryMessage:
+        def __init__(self, name, created_at, msg_id):
+            self.name = name
+            self.created_at = created_at
+            self.id = msg_id
+
+        async def delete(self):
+            deleted.append(self.name)
+
+    class _FakeChannel:
+        def __init__(self):
+            self.items = [
+                _FakeHistoryMessage("a", now - timedelta(days=30), 1),
+                _FakeHistoryMessage("b", now - timedelta(days=2), 2),
+                _FakeHistoryMessage("c", now - timedelta(hours=1), 3),
+            ]
+
+        def history(self, **kwargs):
+            calls.append(kwargs)
+            async def _iter():
+                for item in self.items:
+                    yield item
+
+            return _iter()
+
+        async def purge(self, **kwargs):
+            purges.append(kwargs)
+            matched = [item for item in self.items if kwargs["check"](item)]
+            purged.extend(item.name for item in matched)
+            return matched
+
+    cleared = await clear_discord_channel_history(_FakeChannel())
+
+    assert cleared.deleted_count == 3
+    assert cleared.failed_count == 0
+    assert cleared.command_deleted is True
+    assert calls == [{"limit": None}]
+    assert purges and purges[0]["limit"] is None and callable(purges[0]["check"])
+    assert purged == ["b", "c"]
+    assert deleted == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_clear_discord_channel_history_skips_delete_failures():
+    deleted = []
+    now = datetime.now(timezone.utc)
+
+    class _FakeHistoryMessage:
+        def __init__(self, name, created_at, fail=False):
+            self.name = name
+            self.fail = fail
+            self.created_at = created_at
+
+        async def delete(self):
+            if self.fail:
+                raise RuntimeError("cannot delete")
+            deleted.append(self.name)
+
+    class _FakeChannel:
+        def history(self, **kwargs):
+            async def _iter():
+                yield _FakeHistoryMessage("a", now - timedelta(days=30))
+                yield _FakeHistoryMessage("b", now - timedelta(days=20), fail=True)
+                yield _FakeHistoryMessage("c", now - timedelta(days=16))
+
+            return _iter()
+
+        async def purge(self, **kwargs):
+            return []
+
+    cleared = await clear_discord_channel_history(_FakeChannel())
+
+    assert cleared.deleted_count == 2
+    assert cleared.failed_count == 1
+    assert deleted == ["a", "c"]
+
+
+@pytest.mark.asyncio
+async def test_clear_discord_channel_history_tracks_command_message_deletion():
+    deleted = []
+    purged = []
+    now = datetime.now(timezone.utc)
+
+    class _FakeHistoryMessage:
+        def __init__(self, name, msg_id, created_at):
+            self.name = name
+            self.id = msg_id
+            self.created_at = created_at
+
+        async def delete(self):
+            deleted.append(self.name)
+
+    excluded = types.SimpleNamespace(id=2)
+
+    class _FakeChannel:
+        def __init__(self):
+            self.items = [
+                _FakeHistoryMessage("a", 1, now - timedelta(days=30)),
+                _FakeHistoryMessage("b", 2, now - timedelta(days=1)),
+                _FakeHistoryMessage("c", 3, now - timedelta(days=20)),
+            ]
+
+        def history(self, **kwargs):
+            async def _iter():
+                for item in self.items:
+                    yield item
+
+            return _iter()
+
+        async def purge(self, **kwargs):
+            matched = [item for item in self.items if kwargs["check"](item)]
+            purged.extend(item.name for item in matched)
+            return matched
+
+    cleared = await clear_discord_channel_history(_FakeChannel(), exclude_message=excluded)
+
+    assert cleared.deleted_count == 3
+    assert cleared.command_deleted is True
+    assert purged == ["b"]
+    assert deleted == ["a", "c"]
+
+
+@pytest.mark.asyncio
+async def test_discord_bridge_clear_command_deletes_entire_channel():
+    captured = {}
+
+    class _FakeIntents:
+        message_content = False
+
+        @staticmethod
+        def default():
+            return _FakeIntents()
+
+    class _FakeClientBase:
+        last_instance = None
+
+        def __init__(self, *, intents):
+            self.intents = intents
+            self.user = types.SimpleNamespace(bot=True, id=999)
+            _FakeClientBase.last_instance = self
+
+        def run(self, token):
+            captured["token"] = token
+
+        def get_channel(self, channel_id):
+            return captured["channel"]
+
+        async def fetch_channel(self, channel_id):
+            return captured["channel"]
+
+        async def close(self):
+            return None
+
+    fake_discord = types.SimpleNamespace(Client=_FakeClientBase, Intents=_FakeIntents)
+
+    user_permissions = types.SimpleNamespace(manage_messages=True)
+    bot_permissions = types.SimpleNamespace(manage_messages=True, read_message_history=True)
+
+    class _FakeChannel:
+        id = 12345
+
+        def __init__(self):
+            self.deleted = []
+            self.purged = []
+            self.history_calls = []
+            now = datetime.now(timezone.utc)
+            self.items = [
+                types.SimpleNamespace(id=10, created_at=now - timedelta(days=30), delete=self._delete_factory("m1")),
+                types.SimpleNamespace(id=11, created_at=now - timedelta(hours=1), delete=self._delete_factory("m2")),
+            ]
+
+        def permissions_for(self, subject):
+            if subject is captured["message"].author:
+                return user_permissions
+            return bot_permissions
+
+        def history(self, **kwargs):
+            self.history_calls.append(kwargs)
+            async def _iter():
+                for item in self.items:
+                    yield item
+
+            return _iter()
+
+        async def purge(self, **kwargs):
+            matched = [item for item in self.items if kwargs["check"](item)]
+            if kwargs["check"](captured["message"]):
+                captured["message"].deleted = True
+                matched.append(captured["message"])
+            self.purged.extend("m2" for item in matched if item is not captured["message"])
+            return matched
+
+        def _delete_factory(self, name):
+            async def _delete():
+                self.deleted.append(name)
+
+            return _delete
+
+    class _FakeMessage:
+        def __init__(self, channel):
+            self.id = 999
+            self.created_at = datetime.now(timezone.utc)
+            self.author = types.SimpleNamespace(bot=False, id=1)
+            self.channel = channel
+            self.content = "/clear"
+            self.guild = types.SimpleNamespace(me=types.SimpleNamespace(id=2))
+            self.deleted = False
+            self.replies = []
+
+        async def reply(self, text):
+            self.replies.append(text)
+
+        async def delete(self):
+            self.deleted = True
+
+    with patch.dict(sys.modules, {"discord": fake_discord}):
+        from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+        run_discord_bridge(DiscordBridgeSettings(discord_token="token", channel_id=12345))
+
+    client = _FakeClientBase.last_instance
+    channel = _FakeChannel()
+    message = _FakeMessage(channel)
+    captured["channel"] = channel
+    captured["message"] = message
+    channel.items.append(message)
+
+    await client.on_message(message)
+
+    assert captured["token"] == "token"
+    assert message.replies == []
+    assert message.deleted is True
+    assert channel.history_calls == [{"limit": None}]
+    assert channel.deleted == ["m1"]
+    assert channel.purged == ["m2"]
+
+
+@pytest.mark.asyncio
+async def test_discord_bridge_clear_command_does_not_require_active_session():
+    captured = {}
+
+    class _FakeIntents:
+        message_content = False
+
+        @staticmethod
+        def default():
+            return _FakeIntents()
+
+    class _FakeClientBase:
+        last_instance = None
+
+        def __init__(self, *, intents):
+            self.intents = intents
+            self.user = types.SimpleNamespace(bot=True, id=999)
+            _FakeClientBase.last_instance = self
+
+        def run(self, token):
+            captured["token"] = token
+
+        async def close(self):
+            return None
+
+    fake_discord = types.SimpleNamespace(Client=_FakeClientBase, Intents=_FakeIntents)
+    user_permissions = types.SimpleNamespace(manage_messages=True)
+    bot_permissions = types.SimpleNamespace(manage_messages=True, read_message_history=True)
+
+    class _FakeChannel:
+        id = 12345
+
+        def __init__(self):
+            self.deleted = []
+            self.purged = []
+            self.history_calls = []
+            now = datetime.now(timezone.utc)
+            self.items = [types.SimpleNamespace(id=10, created_at=now - timedelta(hours=1), delete=self._delete_factory("m1"))]
+
+        def permissions_for(self, subject):
+            if subject is captured["message"].author:
+                return user_permissions
+            return bot_permissions
+
+        def history(self, **kwargs):
+            self.history_calls.append(kwargs)
+            async def _iter():
+                for item in self.items:
+                    yield item
+
+            return _iter()
+
+        async def purge(self, **kwargs):
+            matched = [item for item in self.items if kwargs["check"](item)]
+            if kwargs["check"](captured["message"]):
+                captured["message"].deleted = True
+                matched.append(captured["message"])
+            self.purged.extend("m1" for item in matched if item is not captured["message"])
+            return matched
+
+        def _delete_factory(self, name):
+            async def _delete():
+                self.deleted.append(name)
+
+            return _delete
+
+    class _FakeMessage:
+        def __init__(self, channel):
+            self.id = 999
+            self.created_at = datetime.now(timezone.utc)
+            self.author = types.SimpleNamespace(bot=False, id=1)
+            self.channel = channel
+            self.content = "/channel clear"
+            self.guild = types.SimpleNamespace(me=types.SimpleNamespace(id=2))
+            self.deleted = False
+            self.replies = []
+
+        async def reply(self, text):
+            self.replies.append(text)
+
+        async def delete(self):
+            self.deleted = True
+
+    with patch.dict(sys.modules, {"discord": fake_discord}):
+        from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+        run_discord_bridge(DiscordBridgeSettings(discord_token="token", channel_id=12345))
+
+    client = _FakeClientBase.last_instance
+    channel = _FakeChannel()
+    message = _FakeMessage(channel)
+    captured["message"] = message
+    channel.items.append(message)
+
+    await client.on_message(message)
+
+    assert message.replies == []
+    assert message.deleted is True
+    assert channel.history_calls == [{"limit": None}]
+    assert channel.deleted == []
+    assert channel.purged == ["m1"]
+
+
+@pytest.mark.asyncio
+async def test_discord_bridge_clear_command_reports_partial_success_when_command_delete_fails():
+    captured = {}
+
+    class _FakeIntents:
+        message_content = False
+
+        @staticmethod
+        def default():
+            return _FakeIntents()
+
+    class _FakeClientBase:
+        last_instance = None
+
+        def __init__(self, *, intents):
+            self.intents = intents
+            self.user = types.SimpleNamespace(bot=True, id=999)
+            _FakeClientBase.last_instance = self
+
+        def run(self, token):
+            captured["token"] = token
+
+        async def close(self):
+            return None
+
+    fake_discord = types.SimpleNamespace(Client=_FakeClientBase, Intents=_FakeIntents)
+    user_permissions = types.SimpleNamespace(manage_messages=True)
+    bot_permissions = types.SimpleNamespace(manage_messages=True, read_message_history=True)
+
+    class _FakeChannel:
+        id = 12345
+
+        def __init__(self):
+            self.deleted = []
+            self.purged = []
+            now = datetime.now(timezone.utc)
+            self.items = [types.SimpleNamespace(id=10, created_at=now - timedelta(hours=1), delete=self._delete_factory("m1"))]
+
+        def permissions_for(self, subject):
+            if subject is captured["message"].author:
+                return user_permissions
+            return bot_permissions
+
+        def history(self, **kwargs):
+            async def _iter():
+                for item in self.items:
+                    yield item
+
+            return _iter()
+
+        async def purge(self, **kwargs):
+            matched = [item for item in self.items if kwargs["check"](item)]
+            self.purged.extend("m1" for _ in matched)
+            return matched
+
+        def _delete_factory(self, name):
+            async def _delete():
+                self.deleted.append(name)
+
+            return _delete
+
+    class _FakeMessage:
+        def __init__(self, channel):
+            self.author = types.SimpleNamespace(bot=False, id=1)
+            self.channel = channel
+            self.content = "/clear"
+            self.guild = types.SimpleNamespace(me=types.SimpleNamespace(id=2))
+            self.deleted = False
+            self.replies = []
+
+        async def reply(self, text):
+            self.replies.append(text)
+
+        async def delete(self):
+            raise RuntimeError("cannot delete command")
+
+    with patch.dict(sys.modules, {"discord": fake_discord}):
+        from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+        run_discord_bridge(DiscordBridgeSettings(discord_token="token", channel_id=12345))
+
+    client = _FakeClientBase.last_instance
+    channel = _FakeChannel()
+    message = _FakeMessage(channel)
+    captured["message"] = message
+
+    await client.on_message(message)
+
+    assert channel.deleted == []
+    assert channel.purged == ["m1"]
+    assert message.deleted is False
+    assert message.replies == ["Channel history cleared, but this command message could not be deleted."]
 
 
 def test_format_session_log_entry():
