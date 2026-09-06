@@ -197,13 +197,8 @@ def split_discord_message(text: str, limit: int = 1800) -> list[str]:
     return chunks
 
 
-async def clear_discord_channel_history(
-    channel: Any,
-    *,
-    after: Any | None = None,
-    before: Any | None = None,
-) -> int:
-    deleted = await channel.purge(limit=None, after=after, before=before, bulk=False)
+async def clear_discord_channel_history(channel: Any) -> int:
+    deleted = await channel.purge(limit=None, bulk=False)
     return len(deleted)
 
 
@@ -464,7 +459,6 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
             self.last_campaign_id: str | None = None
             self._session_log_cursor: dict[str, int] = {}
             self._pending_narrator_echo: dict[str, str] = {}
-            self._session_clear_boundary: Any | None = None
             self._relay_task: asyncio.Task[None] | None = None
             self._relay_lock = asyncio.Lock()
 
@@ -478,21 +472,6 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
             campaign_id = str(campaign.get("id", "")).strip()
             if campaign_id:
                 self.last_campaign_id = campaign_id
-
-        async def _capture_session_clear_boundary(self) -> None:
-            self._session_clear_boundary = None
-            channel = self.get_channel(settings.channel_id)
-            if channel is None:
-                try:
-                    channel = await self.fetch_channel(settings.channel_id)
-                except Exception:
-                    return
-            if not hasattr(channel, "history"):
-                return
-            boundary = None
-            async for entry in channel.history(limit=1):
-                boundary = entry
-            self._session_clear_boundary = boundary
 
         async def _relay_active_session_updates(self) -> None:
             while not self.is_closed():
@@ -560,7 +539,6 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     else:
                         self.active_session_id = ensured_session_id
                     await self._sync_session_cursor(self.active_session_id)
-                    self._session_clear_boundary = None
                 except Exception as exc:
                     print(f"Discord bridge could not validate active session {self.active_session_id}: {exc}")
             if self._relay_task is not None and not self._relay_task.done():
@@ -624,37 +602,29 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     needs_detach = normalized_words[:2] in (["session", "detach"], ["session", "end"])
                     previous_active = self.active_session_id
                     if is_clear_command:
-                        if not self.active_session_id:
-                            await message.reply("No active session to clear history for.")
-                            return
                         permissions_for = getattr(message.channel, "permissions_for", None)
                         if not callable(permissions_for):
-                            await message.reply("Channel permissions are unavailable; cannot clear session history.")
+                            await message.reply("Channel permissions are unavailable; cannot clear channel history.")
                             return
                         permissions = permissions_for(message.author)
                         if not getattr(permissions, "manage_messages", False):
-                            await message.reply("You need Manage Messages permission to clear session history.")
+                            await message.reply("You need Manage Messages permission to clear the channel.")
                             return
                         bot_subject = getattr(getattr(message, "guild", None), "me", None) or self.user
                         bot_permissions = permissions_for(bot_subject) if bot_subject is not None else None
                         if not bot_permissions or not getattr(bot_permissions, "manage_messages", False):
-                            await message.reply("Bot needs Manage Messages permission to clear session history.")
+                            await message.reply("Bot needs Manage Messages permission to clear the channel.")
                             return
                         if not getattr(bot_permissions, "read_message_history", False):
-                            await message.reply("Bot needs Read Message History permission to clear session history.")
+                            await message.reply("Bot needs Read Message History permission to clear the channel.")
                             return
                         try:
-                            await clear_discord_channel_history(
-                                message.channel,
-                                after=self._session_clear_boundary,
-                                before=message,
-                            )
+                            await clear_discord_channel_history(message.channel)
                             with contextlib.suppress(Exception):
                                 await message.delete()
                         except Exception as exc:
-                            await message.reply(f"Could not clear channel history: {exc}")
+                            await message.reply(f"Could not clear channel: {exc}")
                             return
-                        await self._capture_session_clear_boundary()
                         return
                     if needs_activation and new_session_id:
                         try:
@@ -678,14 +648,12 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                         if needs_detach and previous_active:
                             self._pending_narrator_echo.pop(previous_active, None)
                             self._session_log_cursor.pop(previous_active, None)
-                            self._session_clear_boundary = None
                         self.active_session_id = new_session_id
                         if previous_active and previous_active != self.active_session_id:
                             self._pending_narrator_echo.pop(previous_active, None)
                             self._session_log_cursor.pop(previous_active, None)
                         if self.active_session_id and self.active_session_id != previous_active:
                             await self._sync_session_cursor(self.active_session_id, initialize=True)
-                            await self._capture_session_clear_boundary()
                     if new_campaign_id:
                         self.last_campaign_id = new_campaign_id
                     if reply:

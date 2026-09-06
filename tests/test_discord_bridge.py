@@ -577,22 +577,20 @@ def test_process_bridge_command_channel_clear_alias():
 @pytest.mark.asyncio
 async def test_clear_discord_channel_history_uses_non_bulk_purge():
     calls = []
-    after = object()
-    before = object()
 
     class _FakeChannel:
         async def purge(self, **kwargs):
             calls.append(kwargs)
             return ("a", "b", "c")
 
-    deleted_count = await clear_discord_channel_history(_FakeChannel(), after=after, before=before)
+    deleted_count = await clear_discord_channel_history(_FakeChannel())
 
     assert deleted_count == 3
-    assert calls == [{"limit": None, "after": after, "before": before, "bulk": False}]
+    assert calls == [{"limit": None, "bulk": False}]
 
 
 @pytest.mark.asyncio
-async def test_discord_bridge_clear_command_uses_permissions_and_session_boundary():
+async def test_discord_bridge_clear_command_deletes_entire_channel():
     captured = {}
 
     class _FakeIntents:
@@ -626,8 +624,6 @@ async def test_discord_bridge_clear_command_uses_permissions_and_session_boundar
 
     user_permissions = types.SimpleNamespace(manage_messages=True)
     bot_permissions = types.SimpleNamespace(manage_messages=True, read_message_history=True)
-    boundary = types.SimpleNamespace(id=111)
-    history_entries = [types.SimpleNamespace(id=222)]
 
     class _FakeChannel:
         id = 12345
@@ -643,13 +639,6 @@ async def test_discord_bridge_clear_command_uses_permissions_and_session_boundar
         async def purge(self, **kwargs):
             self.purge_calls.append(kwargs)
             return ("deleted",)
-
-        def history(self, **kwargs):
-            async def _iter():
-                for entry in history_entries:
-                    yield entry
-
-            return _iter()
 
     class _FakeMessage:
         def __init__(self, channel):
@@ -676,16 +665,89 @@ async def test_discord_bridge_clear_command_uses_permissions_and_session_boundar
     message = _FakeMessage(channel)
     captured["channel"] = channel
     captured["message"] = message
-    client.active_session_id = "sess-1"
-    client._session_clear_boundary = boundary
 
     await client.on_message(message)
 
     assert captured["token"] == "token"
     assert message.replies == []
     assert message.deleted is True
-    assert channel.purge_calls == [{"limit": None, "after": boundary, "before": message, "bulk": False}]
-    assert client._session_clear_boundary is history_entries[0]
+    assert channel.purge_calls == [{"limit": None, "bulk": False}]
+
+
+@pytest.mark.asyncio
+async def test_discord_bridge_clear_command_does_not_require_active_session():
+    captured = {}
+
+    class _FakeIntents:
+        message_content = False
+
+        @staticmethod
+        def default():
+            return _FakeIntents()
+
+    class _FakeClientBase:
+        last_instance = None
+
+        def __init__(self, *, intents):
+            self.intents = intents
+            self.user = types.SimpleNamespace(bot=True, id=999)
+            _FakeClientBase.last_instance = self
+
+        def run(self, token):
+            captured["token"] = token
+
+        async def close(self):
+            return None
+
+    fake_discord = types.SimpleNamespace(Client=_FakeClientBase, Intents=_FakeIntents)
+    user_permissions = types.SimpleNamespace(manage_messages=True)
+    bot_permissions = types.SimpleNamespace(manage_messages=True, read_message_history=True)
+
+    class _FakeChannel:
+        id = 12345
+
+        def __init__(self):
+            self.purge_calls = []
+
+        def permissions_for(self, subject):
+            if subject is captured["message"].author:
+                return user_permissions
+            return bot_permissions
+
+        async def purge(self, **kwargs):
+            self.purge_calls.append(kwargs)
+            return ()
+
+    class _FakeMessage:
+        def __init__(self, channel):
+            self.author = types.SimpleNamespace(bot=False, id=1)
+            self.channel = channel
+            self.content = "/channel clear"
+            self.guild = types.SimpleNamespace(me=types.SimpleNamespace(id=2))
+            self.deleted = False
+            self.replies = []
+
+        async def reply(self, text):
+            self.replies.append(text)
+
+        async def delete(self):
+            self.deleted = True
+
+    with patch.dict(sys.modules, {"discord": fake_discord}):
+        from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+        run_discord_bridge(DiscordBridgeSettings(discord_token="token", channel_id=12345))
+
+    client = _FakeClientBase.last_instance
+    channel = _FakeChannel()
+    message = _FakeMessage(channel)
+    captured["message"] = message
+
+    await client.on_message(message)
+
+    assert message.replies == []
+    assert message.deleted is True
+    assert channel.purge_calls == [{"limit": None, "bulk": False}]
 
 
 def test_format_session_log_entry():
