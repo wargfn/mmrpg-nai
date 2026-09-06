@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import shlex
 from dataclasses import dataclass
@@ -626,8 +625,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             return
                         try:
                             await clear_discord_channel_history(message.channel, before=message)
-                            with contextlib.suppress(Exception):
-                                await message.delete()
+                            await message.delete()
                         except Exception as exc:
                             await message.reply(f"Could not clear channel: {exc}")
                             return
