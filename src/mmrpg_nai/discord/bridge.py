@@ -227,10 +227,14 @@ async def clear_discord_channel_history(
         older_messages.append((item, is_command_message))
 
     if recent_messages:
-        recent_ids = {id(item) for item in recent_messages}
+        recent_message_ids = {getattr(item, "id", None) for item in recent_messages if getattr(item, "id", None) is not None}
+        recent_message_objects = {id(item) for item in recent_messages if getattr(item, "id", None) is None}
 
         def _recent_check(item: Any) -> bool:
-            return id(item) in recent_ids
+            item_id = getattr(item, "id", None)
+            if item_id is not None:
+                return item_id in recent_message_ids
+            return id(item) in recent_message_objects
 
         purged = await channel.purge(limit=None, check=_recent_check)
         deleted += len(purged)
