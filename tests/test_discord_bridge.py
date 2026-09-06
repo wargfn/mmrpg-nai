@@ -599,7 +599,7 @@ async def test_clear_discord_channel_history_deletes_full_history():
     deleted_count = await clear_discord_channel_history(_FakeChannel())
 
     assert deleted_count == 3
-    assert calls == [{"limit": None, "before": None}]
+    assert calls == [{"limit": None}]
     assert deleted == ["a", "b", "c"]
 
 
@@ -627,6 +627,35 @@ async def test_clear_discord_channel_history_skips_delete_failures():
             return _iter()
 
     deleted_count = await clear_discord_channel_history(_FakeChannel())
+
+    assert deleted_count == 2
+    assert deleted == ["a", "c"]
+
+
+@pytest.mark.asyncio
+async def test_clear_discord_channel_history_skips_excluded_message():
+    deleted = []
+
+    class _FakeHistoryMessage:
+        def __init__(self, name, msg_id):
+            self.name = name
+            self.id = msg_id
+
+        async def delete(self):
+            deleted.append(self.name)
+
+    excluded = types.SimpleNamespace(id=2)
+
+    class _FakeChannel:
+        def history(self, **kwargs):
+            async def _iter():
+                yield _FakeHistoryMessage("a", 1)
+                yield _FakeHistoryMessage("b", 2)
+                yield _FakeHistoryMessage("c", 3)
+
+            return _iter()
+
+    deleted_count = await clear_discord_channel_history(_FakeChannel(), exclude_message=excluded)
 
     assert deleted_count == 2
     assert deleted == ["a", "c"]
@@ -725,7 +754,7 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
     assert captured["token"] == "token"
     assert message.replies == []
     assert message.deleted is True
-    assert channel.history_calls == [{"limit": None, "before": message}]
+    assert channel.history_calls == [{"limit": None}]
     assert channel.deleted == ["m1", "m2"]
 
 
@@ -812,7 +841,7 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
 
     assert message.replies == []
     assert message.deleted is True
-    assert channel.history_calls == [{"limit": None, "before": message}]
+    assert channel.history_calls == [{"limit": None}]
     assert channel.deleted == ["m1"]
 
 
