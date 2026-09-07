@@ -38,7 +38,7 @@ app = FastAPI(
         "Provides REST access to campaigns, sessions, characters, equipment, "
         "power sets, adventures, and source materials."
     ),
-    version="0.1.5",
+    version="0.1.6",
 )
 
 _store: Store | None = None

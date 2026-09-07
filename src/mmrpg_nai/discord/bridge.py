@@ -6,6 +6,7 @@ import asyncio
 import json
 import shlex
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
@@ -168,6 +169,18 @@ class MCPWebClient:
         return False
 
 
+def _normalized_bridge_command_words(text: str) -> list[str]:
+    if not text.startswith("/"):
+        return []
+    try:
+        parts = shlex.split(text[1:].strip())
+    except ValueError:
+        return []
+    if parts and parts[0].lower() in {"mmrpg-nai", "mmrpg_nai"}:
+        parts = parts[1:]
+    return [part.lower() for part in parts]
+
+
 def split_discord_message(text: str, limit: int = 1800) -> list[str]:
     if len(text) <= limit:
         return [text]
@@ -182,6 +195,65 @@ def split_discord_message(text: str, limit: int = 1800) -> list[str]:
     if remaining:
         chunks.append(remaining)
     return chunks
+
+
+@dataclass
+class DiscordChannelClearResult:
+    deleted_count: int
+    failed_count: int
+    command_deleted: bool
+
+
+async def clear_discord_channel_history(
+    channel: Any, *, exclude_message: Any | None = None
+) -> DiscordChannelClearResult:
+    deleted = 0
+    failed = 0
+    command_deleted = exclude_message is None
+    excluded_id = getattr(exclude_message, "id", None)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    recent_messages: list[Any] = []
+    older_messages: list[tuple[Any, bool]] = []
+    async for item in channel.history(limit=None):
+        is_command_message = exclude_message is not None and (
+            item is exclude_message or (excluded_id is not None and getattr(item, "id", None) == excluded_id)
+        )
+        created_at = getattr(item, "created_at", None)
+        if created_at is not None and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if created_at is not None and created_at >= cutoff:
+            recent_messages.append(item)
+            continue
+        older_messages.append((item, is_command_message))
+
+    if recent_messages:
+        recent_message_ids = {getattr(item, "id", None) for item in recent_messages if getattr(item, "id", None) is not None}
+        recent_message_objects = {id(item) for item in recent_messages if getattr(item, "id", None) is None}
+
+        def _recent_check(item: Any) -> bool:
+            item_id = getattr(item, "id", None)
+            if item_id is not None:
+                return item_id in recent_message_ids
+            return id(item) in recent_message_objects
+
+        purged = await channel.purge(limit=None, check=_recent_check)
+        deleted += len(purged)
+        if exclude_message is not None:
+            command_deleted = any(
+                item is exclude_message or (excluded_id is not None and getattr(item, "id", None) == excluded_id)
+                for item in purged
+            )
+
+    for item, is_command_message in older_messages:
+        try:
+            await item.delete()
+        except Exception:
+            failed += 1
+            continue
+        deleted += 1
+        if is_command_message:
+            command_deleted = True
+    return DiscordChannelClearResult(deleted, failed, command_deleted)
 
 
 @dataclass
@@ -238,14 +310,26 @@ def process_bridge_command(
                 "• /campaign list\n"
                 "• /campaign new <name>\n"
                 "• /session start [campaign-id-or-prefix] [title]\n"
+                "• /session run [campaign-id-or-prefix] [title]\n"
                 "• /session list\n"
                 "• /session use <session-id-or-prefix>\n"
+                "• /session detach\n"
                 "• /session end\n"
-                "• /session status"
+                "• /session status\n"
+                "• /clear\n"
+                "• /channel clear"
             ),
             active_session_id,
             last_campaign_id,
         )
+
+    if cmd == "clear":
+        return True, None, active_session_id, last_campaign_id
+
+    if cmd == "channel":
+        if len(parts) >= 2 and parts[1].lower() == "clear":
+            return True, None, active_session_id, last_campaign_id
+        return True, "Usage: /channel clear", active_session_id, last_campaign_id
 
     if cmd == "campaign":
         if len(parts) < 2:
@@ -281,7 +365,7 @@ def process_bridge_command(
 
     if cmd == "session":
         if len(parts) < 2:
-            return True, "Usage: /session list|start|use|end|status ...", active_session_id, last_campaign_id
+            return True, "Usage: /session list|start|run|use|detach|end|status ...", active_session_id, last_campaign_id
         action = parts[1].lower()
         if action == "list":
             sessions = mcp.list_active_sessions()
@@ -301,6 +385,10 @@ def process_bridge_command(
             sid = active_session_id or "none"
             cid = last_campaign_id or "none"
             return True, f"Active session: {sid}\nLast campaign: {cid}", active_session_id, last_campaign_id
+        if action == "detach":
+            if not active_session_id:
+                return True, "No active session to detach.", active_session_id, last_campaign_id
+            return True, f"Detached from session {active_session_id}.", None, last_campaign_id
         if action == "end":
             if not active_session_id:
                 return True, "No active session to end.", active_session_id, last_campaign_id
@@ -341,7 +429,7 @@ def process_bridge_command(
                 canonical_session_id,
                 campaign_id,
             )
-        if action in {"start", "new"}:
+        if action in {"start", "new", "run"}:
             if len(parts) >= 3:
                 campaign_ref = parts[2].strip()
                 title = " ".join(parts[3:]).strip() or None
@@ -557,18 +645,47 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     await message.reply(f"Command error: {exc}")
                     return
                 if handled:
-                    normalized = text[1:].strip().lower()
-                    if normalized.startswith("mmrpg-nai "):
-                        normalized = normalized[len("mmrpg-nai "):]
-                    elif normalized.startswith("mmrpg_nai "):
-                        normalized = normalized[len("mmrpg_nai "):]
+                    normalized_words = _normalized_bridge_command_words(text)
+                    is_clear_command = normalized_words == ["clear"] or normalized_words[:2] == ["channel", "clear"]
                     needs_activation = (
-                        normalized.startswith("session use")
-                        or normalized.startswith("session start")
-                        or normalized.startswith("session new")
+                        normalized_words[:2] == ["session", "use"]
+                        or normalized_words[:2] == ["session", "start"]
+                        or normalized_words[:2] == ["session", "new"]
+                        or normalized_words[:2] == ["session", "run"]
                     )
-                    needs_detach = normalized.startswith("session end")
+                    needs_detach = normalized_words[:2] in (["session", "detach"], ["session", "end"])
                     previous_active = self.active_session_id
+                    if is_clear_command:
+                        permissions_for = getattr(message.channel, "permissions_for", None)
+                        if not callable(permissions_for):
+                            await message.reply("Channel permissions are unavailable; cannot clear channel history.")
+                            return
+                        permissions = permissions_for(message.author)
+                        if not getattr(permissions, "manage_messages", False):
+                            await message.reply("You need Manage Messages permission to clear the channel.")
+                            return
+                        bot_subject = getattr(getattr(message, "guild", None), "me", None) or self.user
+                        bot_permissions = permissions_for(bot_subject) if bot_subject is not None else None
+                        if not bot_permissions or not getattr(bot_permissions, "manage_messages", False):
+                            await message.reply("Bot needs Manage Messages permission to clear the channel.")
+                            return
+                        if not getattr(bot_permissions, "read_message_history", False):
+                            await message.reply("Bot needs Read Message History permission to clear the channel.")
+                            return
+                        try:
+                            cleared = await clear_discord_channel_history(message.channel, exclude_message=message)
+                        except Exception as exc:
+                            await message.reply(f"Could not clear channel: {exc}")
+                            return
+                        if not cleared.command_deleted:
+                            await message.reply("Channel history cleared, but this command message could not be deleted.")
+                            return
+                        if cleared.failed_count:
+                            await message.reply(
+                                f"Channel clear completed with {cleared.failed_count} message deletion failure(s)."
+                            )
+                            return
+                        return
                     if needs_activation and new_session_id:
                         try:
                             ensured_session_id, resumed = await asyncio.to_thread(
@@ -581,6 +698,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                                 self._pending_narrator_echo.pop(previous_active, None)
                                 self._session_log_cursor.pop(previous_active, None)
                             await self._sync_session_cursor(ensured_session_id, initialize=True)
+                            await self._capture_session_clear_boundary()
                             if resumed:
                                 reply = f"{reply}\nResumed and attached to session {ensured_session_id}."
                         except Exception as exc:
