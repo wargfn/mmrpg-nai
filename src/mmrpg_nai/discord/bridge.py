@@ -747,7 +747,6 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                                 self._pending_narrator_echo.pop(previous_active, None)
                                 self._session_log_cursor.pop(previous_active, None)
                             await self._sync_session_cursor(ensured_session_id, initialize=True)
-                            await self._capture_session_clear_boundary()
                             if resumed:
                                 reply = f"{reply}\nResumed and attached to session {ensured_session_id}."
                         except Exception as exc:

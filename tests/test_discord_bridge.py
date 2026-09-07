@@ -1089,6 +1089,86 @@ async def test_discord_bridge_clear_command_reports_partial_success_when_command
     assert message.replies == ["Channel history cleared, but this command message could not be deleted."]
 
 
+@pytest.mark.asyncio
+async def test_discord_bridge_session_use_attaches_without_missing_method_error():
+    class _FakeIntents:
+        message_content = False
+
+        @staticmethod
+        def default():
+            return _FakeIntents()
+
+    class _FakeClientBase:
+        last_instance = None
+
+        def __init__(self, *, intents):
+            self.intents = intents
+            self.user = types.SimpleNamespace(bot=True, id=999)
+            _FakeClientBase.last_instance = self
+
+        def run(self, token):
+            return None
+
+        async def close(self):
+            return None
+
+    fake_discord = types.SimpleNamespace(Client=_FakeClientBase, Intents=_FakeIntents)
+
+    class _FakeTyping:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeChannel:
+        id = 12345
+
+        def typing(self):
+            return _FakeTyping()
+
+        async def send(self, text):
+            return None
+
+    class _FakeMessage:
+        def __init__(self, channel):
+            self.author = types.SimpleNamespace(bot=False, id=1)
+            self.channel = channel
+            self.content = "/session use session-1"
+            self.guild = types.SimpleNamespace(me=types.SimpleNamespace(id=2))
+            self.replies = []
+
+        async def reply(self, text):
+            self.replies.append(text)
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": [{"id": "session-1"}]})
+        if req.full_url.endswith("/web/session/session-1"):
+            return _FakeHTTPResponse(
+                {
+                    "is_active": True,
+                    "session": {"id": "session-1", "log": []},
+                    "campaign": {"id": "camp-1"},
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch.dict(sys.modules, {"discord": fake_discord}):
+        from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+        run_discord_bridge(DiscordBridgeSettings(discord_token="token", channel_id=12345))
+
+    client = _FakeClientBase.last_instance
+    message = _FakeMessage(_FakeChannel())
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        await client.on_message(message)
+
+    assert message.replies
+    assert message.replies[0].startswith("Active session set to session-1 (active)")
+    assert not any("Could not attach session" in reply for reply in message.replies)
+
+
 def test_format_session_log_entry():
     assert _format_session_log_entry({"role": "player", "content": "hello"}) == "**Player:** hello"
     assert _format_session_log_entry({"role": "narrator", "content": "world"}) == "**Narrator:** world"
