@@ -726,6 +726,7 @@ If no session is set, control the bridge from Discord with commands:
 - `/session show log <session-id-or-prefix>`
 - `/session use <session-id-or-prefix>`
 - `/session end`
+- `/session quit`
 - `/session status`
 - `/help`
 
@@ -734,6 +735,7 @@ Using `/session use <session-id-or-prefix>` validates and selects matching sessi
 If you select an inactive session, it is set as active target and will resume automatically on the next message when resume mode is enabled.
 `/session list` includes both active and previous sessions.
 `/session show log <session-id-or-prefix>` prints the selected session log in Discord, including previous sessions.
+`/session quit` is an alias for ending the current session; when MCP returns close output, session summary/campaign progress are posted before detach.
 Session attach/start from Discord now also verifies the session is present in MCP web active sessions.
 
 | Option | Default | Description |

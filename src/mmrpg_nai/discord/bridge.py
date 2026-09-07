@@ -316,6 +316,7 @@ def process_bridge_command(
                 "• /session use <session-id-or-prefix>\n"
                 "• /session detach\n"
                 "• /session end\n"
+                "• /session quit\n"
                 "• /session status\n"
                 "• /clear\n"
                 "• /channel clear"
@@ -368,7 +369,7 @@ def process_bridge_command(
         if len(parts) < 2:
             return (
                 True,
-                "Usage: /session list|show log|start|run|use|detach|end|status ...",
+                "Usage: /session list|show log|start|run|use|detach|end|quit|status ...",
                 active_session_id,
                 last_campaign_id,
             )
@@ -438,7 +439,7 @@ def process_bridge_command(
             if not active_session_id:
                 return True, "No active session to detach.", active_session_id, last_campaign_id
             return True, f"Detached from session {active_session_id}.", None, last_campaign_id
-        if action == "end":
+        if action in {"end", "quit"}:
             if not active_session_id:
                 return True, "No active session to end.", active_session_id, last_campaign_id
             try:
@@ -452,7 +453,24 @@ def process_bridge_command(
                     raise
             ended = mcp.end_session(target_session_id)
             if bool(ended.get("ended")):
-                return True, f"Ended and detached from session {target_session_id}.", None, last_campaign_id
+                lines: list[str] = []
+                summary = str(ended.get("summary", "")).strip()
+                start_prompt = str(ended.get("start_prompt", "")).strip()
+                campaign_progress = str(ended.get("campaign_progress", "")).strip()
+                if summary:
+                    lines.extend(["Session Summary:", summary])
+                if start_prompt:
+                    if lines:
+                        lines.append("")
+                    lines.extend(["Start Here:", start_prompt])
+                if campaign_progress:
+                    if lines:
+                        lines.append("")
+                    lines.extend(["Campaign Progress:", campaign_progress])
+                if lines:
+                    lines.append("")
+                lines.append(f"Ended and detached from session {target_session_id}.")
+                return True, "\n".join(lines), None, last_campaign_id
             return (
                 True,
                 f"Could not end session {target_session_id}; still attached.",
