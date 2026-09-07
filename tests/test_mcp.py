@@ -44,6 +44,27 @@ def test_campaign_crud(client: TestClient):
     assert r.status_code == 404
 
 
+def test_campaign_plan_endpoint(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    class DummyNarrator:
+        def __init__(self, cfg, store):
+            pass
+
+        def plan_campaign(self, brief: str) -> str:
+            return f"Plan for: {brief}"
+
+    monkeypatch.setattr(service, "Narrator", DummyNarrator)
+
+    campaign = client.post("/campaigns", json={"name": "Plan Campaign", "description": "D"}).json()
+    r = client.post(f"/campaigns/{campaign['id']}/plan", json={"brief": "street-level mystery"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["campaign"]["id"] == campaign["id"]
+    assert data["plan"] == "Plan for: street-level mystery"
+
+    updated = client.get(f"/campaigns/{campaign['id']}").json()
+    assert updated["plan"] == "Plan for: street-level mystery"
+
+
 def test_character_crud(client: TestClient):
     char = {"name": "Thor", "alias": "God of Thunder"}
     r = client.post("/characters", json=char)

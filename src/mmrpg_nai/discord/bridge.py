@@ -92,6 +92,9 @@ class MCPWebClient:
     def create_campaign(self, name: str, description: str = "") -> dict[str, Any]:
         return self._post("/campaigns", {"name": name, "description": description})
 
+    def plan_campaign(self, campaign_id: str, brief: str) -> dict[str, Any]:
+        return self._post(f"/campaigns/{campaign_id}/plan", {"brief": brief})
+
     def start_session(self, campaign_id: str, title: str | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"campaign_id": campaign_id}
         if title:
@@ -140,7 +143,20 @@ class MCPWebClient:
         if all_match:
             return all_match
 
-        raise MCPBridgeError("Session not found. Use /session list to view active sessions.")
+        raise MCPBridgeError("Session not found. Use /session list to view sessions.")
+
+    def resolve_campaign_id(self, campaign_ref: str) -> str:
+        ref = campaign_ref.strip()
+        campaigns = self.list_campaigns()
+        exact = [c for c in campaigns if str(c.get("id", "")).strip() == ref]
+        if len(exact) == 1:
+            return str(exact[0].get("id", "")).strip()
+        prefix = [c for c in campaigns if str(c.get("id", "")).strip().startswith(ref)]
+        if len(prefix) == 1:
+            return str(prefix[0].get("id", "")).strip()
+        if len(prefix) > 1:
+            raise MCPBridgeError("Campaign prefix matches multiple campaigns; be more specific.")
+        raise MCPBridgeError("Campaign not found. Use /campaign list to view campaigns.")
 
     def ensure_active_session(self, session_id: str, resume_if_inactive: bool = True) -> tuple[str, bool]:
         state = self.get_session_state(session_id)
@@ -205,7 +221,7 @@ class DiscordChannelClearResult:
 
 
 async def clear_discord_channel_history(
-    channel: Any, *, exclude_message: Any | None = None
+    channel: Any, *, exclude_message: Any | None = None, preserve_pinned: bool = False
 ) -> DiscordChannelClearResult:
     deleted = 0
     failed = 0
@@ -215,6 +231,8 @@ async def clear_discord_channel_history(
     recent_messages: list[Any] = []
     older_messages: list[tuple[Any, bool]] = []
     async for item in channel.history(limit=None):
+        if preserve_pinned and bool(getattr(item, "pinned", False)):
+            continue
         is_command_message = exclude_message is not None and (
             item is exclude_message or (excluded_id is not None and getattr(item, "id", None) == excluded_id)
         )
@@ -309,12 +327,15 @@ def process_bridge_command(
                 "Commands:\n"
                 "• /campaign list\n"
                 "• /campaign new <name>\n"
+                "• /campaign plan <campaign-id-or-prefix> <brief>\n"
                 "• /session start [campaign-id-or-prefix] [title]\n"
                 "• /session run [campaign-id-or-prefix] [title]\n"
                 "• /session list\n"
+                "• /session show log <session-id-or-prefix>\n"
                 "• /session use <session-id-or-prefix>\n"
                 "• /session detach\n"
                 "• /session end\n"
+                "• /session quit\n"
                 "• /session status\n"
                 "• /clear\n"
                 "• /channel clear"
@@ -333,7 +354,7 @@ def process_bridge_command(
 
     if cmd == "campaign":
         if len(parts) < 2:
-            return True, "Usage: /campaign list|new ...", active_session_id, last_campaign_id
+            return True, "Usage: /campaign list|new|plan ...", active_session_id, last_campaign_id
         action = parts[1].lower()
         if action == "list":
             campaigns = mcp.list_campaigns()
@@ -361,26 +382,101 @@ def process_bridge_command(
                 active_session_id,
                 campaign_id,
             )
-        return True, "Usage: /campaign list or /campaign new <name>", active_session_id, last_campaign_id
+        if action == "plan":
+            if len(parts) < 4 or not parts[2].strip() or not " ".join(parts[3:]).strip():
+                return True, "Usage: /campaign plan <campaign-id-or-prefix> <brief>", active_session_id, last_campaign_id
+            campaign_ref = parts[2].strip()
+            brief = " ".join(parts[3:]).strip()
+            try:
+                campaign_id = mcp.resolve_campaign_id(campaign_ref)
+                planned = mcp.plan_campaign(campaign_id, brief)
+            except MCPBridgeError as exc:
+                return True, str(exc), active_session_id, last_campaign_id
+            campaign = planned.get("campaign") or {}
+            resolved_campaign_id = str(campaign.get("id", "")).strip() or campaign_id
+            campaign_name = str(campaign.get("name", resolved_campaign_id)).strip() or resolved_campaign_id
+            plan = str(planned.get("plan", "")).strip()
+            if not plan:
+                return (
+                    True,
+                    f"Campaign plan generated for '{campaign_name}' ({resolved_campaign_id}), but no plan text was returned.",
+                    active_session_id,
+                    resolved_campaign_id,
+                )
+            return (
+                True,
+                f"Campaign plan for '{campaign_name}' ({resolved_campaign_id}):\n{plan}",
+                active_session_id,
+                resolved_campaign_id,
+            )
+        return True, "Usage: /campaign list or /campaign new <name> or /campaign plan <campaign-id-or-prefix> <brief>", active_session_id, last_campaign_id
 
     if cmd == "session":
         if len(parts) < 2:
-            return True, "Usage: /session list|start|run|use|detach|end|status ...", active_session_id, last_campaign_id
+            return (
+                True,
+                "Usage: /session list|show log|start|run|use|detach|end|quit|status ...",
+                active_session_id,
+                last_campaign_id,
+            )
         action = parts[1].lower()
         if action == "list":
-            sessions = mcp.list_active_sessions()
-            if not sessions:
-                return True, "No active sessions found.", active_session_id, last_campaign_id
+            active_sessions = mcp.list_active_sessions()
+            all_sessions = mcp.list_sessions()
+            active_ids = {str(s.get("id", "")).strip() for s in active_sessions if str(s.get("id", "")).strip()}
+            previous_sessions = [
+                s for s in all_sessions if str(s.get("id", "")).strip() and str(s.get("id", "")).strip() not in active_ids
+            ]
+            if not active_sessions and not previous_sessions:
+                return True, "No sessions found.", active_session_id, last_campaign_id
             lines: list[str] = ["Active sessions:"]
-            for s in sessions[:20]:
+            for s in active_sessions[:20]:
                 sid = str(s.get("id", "")).strip()
                 cid = str(s.get("campaign_id", "")).strip()
                 title = str(s.get("title", "")).strip()
                 marker = " (current)" if active_session_id and sid == active_session_id else ""
                 lines.append(f"• {sid}  {cid[:8]}  {title}{marker}".rstrip())
-            if len(sessions) > 20:
-                lines.append(f"…and {len(sessions) - 20} more")
+            if len(active_sessions) > 20:
+                lines.append(f"…and {len(active_sessions) - 20} more")
+            lines.append("")
+            lines.append("Previous sessions:")
+            for s in previous_sessions[:20]:
+                sid = str(s.get("id", "")).strip()
+                cid = str(s.get("campaign_id", "")).strip()
+                title = str(s.get("title", "")).strip()
+                marker = " (current, inactive)" if active_session_id and sid == active_session_id else ""
+                lines.append(f"• {sid}  {cid[:8]}  {title}{marker}".rstrip())
+            if len(previous_sessions) > 20:
+                lines.append(f"…and {len(previous_sessions) - 20} more")
+            if not previous_sessions:
+                lines.append("• none")
             return True, "\n".join(lines), active_session_id, last_campaign_id
+        if action == "show":
+            if len(parts) < 4 or parts[2].lower() != "log" or not parts[3].strip():
+                return True, "Usage: /session show log <session-id-or-prefix>", active_session_id, last_campaign_id
+            try:
+                session_id = mcp.resolve_session_id(parts[3].strip())
+                state = mcp.get_session_state(session_id)
+            except MCPBridgeError as exc:
+                return True, str(exc), active_session_id, last_campaign_id
+            session = state.get("session") or {}
+            canonical_session_id = str(session.get("id", "")).strip() or session_id
+            log_entries = session.get("log") or []
+            if not isinstance(log_entries, list) or not log_entries:
+                return True, f"Session {canonical_session_id} has no log entries.", active_session_id, last_campaign_id
+            rendered_entries = [
+                rendered
+                for rendered in (_format_session_log_entry(entry) for entry in log_entries if isinstance(entry, dict))
+                if rendered
+            ]
+            if not rendered_entries:
+                return True, f"Session {canonical_session_id} has no log entries.", active_session_id, last_campaign_id
+            max_entries = 40
+            shown = rendered_entries[-max_entries:]
+            header = [f"Session log for {canonical_session_id}:"]
+            if len(rendered_entries) > max_entries:
+                header.append(f"(Showing last {max_entries} of {len(rendered_entries)} entries)")
+            return True, "\n".join([*header, *shown]), active_session_id, last_campaign_id
         if action == "status":
             sid = active_session_id or "none"
             cid = last_campaign_id or "none"
@@ -403,11 +499,66 @@ def process_bridge_command(
                     raise
             ended = mcp.end_session(target_session_id)
             if bool(ended.get("ended")):
-                return True, f"Ended and detached from session {target_session_id}.", None, last_campaign_id
+                lines: list[str] = []
+                summary = str(ended.get("summary", "")).strip()
+                start_prompt = str(ended.get("start_prompt", "")).strip()
+                campaign_progress = str(ended.get("campaign_progress", "")).strip()
+                if summary:
+                    lines.extend(["Session Summary:", summary])
+                if start_prompt:
+                    if lines:
+                        lines.append("")
+                    lines.extend(["Start Here:", start_prompt])
+                if campaign_progress:
+                    if lines:
+                        lines.append("")
+                    lines.extend(["Campaign Progress:", campaign_progress])
+                if lines:
+                    lines.append("")
+                lines.append(f"Ended and detached from session {target_session_id}.")
+                return True, "\n".join(lines), None, last_campaign_id
             return (
                 True,
                 f"Could not end session {target_session_id}; still attached.",
                 active_session_id,
+                last_campaign_id,
+            )
+        if action == "quit":
+            if not active_session_id:
+                return True, "No active session to quit.", active_session_id, last_campaign_id
+            try:
+                state = mcp.get_session_state(active_session_id)
+                session = state.get("session") or {}
+                target_session_id = str(session.get("id", "")).strip() or active_session_id
+            except MCPBridgeError as exc:
+                if str(exc).startswith("HTTP 404:"):
+                    target_session_id = active_session_id
+                else:
+                    raise
+            ended = mcp.end_session(target_session_id)
+            if bool(ended.get("ended")):
+                lines: list[str] = []
+                summary = str(ended.get("summary", "")).strip()
+                start_prompt = str(ended.get("start_prompt", "")).strip()
+                campaign_progress = str(ended.get("campaign_progress", "")).strip()
+                if summary:
+                    lines.extend(["Session Summary:", summary])
+                if start_prompt:
+                    if lines:
+                        lines.append("")
+                    lines.extend(["Start Here:", start_prompt])
+                if campaign_progress:
+                    if lines:
+                        lines.append("")
+                    lines.extend(["Campaign Progress:", campaign_progress])
+                if lines:
+                    lines.append("")
+                lines.append(f"Ended and detached from session {target_session_id}.")
+                return True, "\n".join(lines), None, last_campaign_id
+            return (
+                True,
+                f"Session {target_session_id} was not active in MCP; detached from session anyway.",
+                None,
                 last_campaign_id,
             )
         if action == "use":
@@ -646,7 +797,8 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     return
                 if handled:
                     normalized_words = _normalized_bridge_command_words(text)
-                    is_clear_command = normalized_words == ["clear"] or normalized_words[:2] == ["channel", "clear"]
+                    is_clear_command = normalized_words == ["clear"]
+                    is_channel_clear_command = normalized_words[:2] == ["channel", "clear"]
                     needs_activation = (
                         normalized_words[:2] == ["session", "use"]
                         or normalized_words[:2] == ["session", "start"]
@@ -655,7 +807,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     )
                     needs_detach = normalized_words[:2] in (["session", "detach"], ["session", "end"])
                     previous_active = self.active_session_id
-                    if is_clear_command:
+                    if is_clear_command or is_channel_clear_command:
                         permissions_for = getattr(message.channel, "permissions_for", None)
                         if not callable(permissions_for):
                             await message.reply("Channel permissions are unavailable; cannot clear channel history.")
@@ -673,7 +825,11 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             await message.reply("Bot needs Read Message History permission to clear the channel.")
                             return
                         try:
-                            cleared = await clear_discord_channel_history(message.channel, exclude_message=message)
+                            cleared = await clear_discord_channel_history(
+                                message.channel,
+                                exclude_message=message,
+                                preserve_pinned=is_clear_command,
+                            )
                         except Exception as exc:
                             await message.reply(f"Could not clear channel: {exc}")
                             return
@@ -698,7 +854,6 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                                 self._pending_narrator_echo.pop(previous_active, None)
                                 self._session_log_cursor.pop(previous_active, None)
                             await self._sync_session_cursor(ensured_session_id, initialize=True)
-                            await self._capture_session_clear_boundary()
                             if resumed:
                                 reply = f"{reply}\nResumed and attached to session {ensured_session_id}."
                         except Exception as exc:
@@ -717,7 +872,10 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     if new_campaign_id:
                         self.last_campaign_id = new_campaign_id
                     if reply:
-                        await message.reply(reply)
+                        chunks = split_discord_message(reply)
+                        await message.reply(chunks[0])
+                        for chunk in chunks[1:]:
+                            await message.channel.send(chunk)
                     return
 
             if not self.active_session_id:

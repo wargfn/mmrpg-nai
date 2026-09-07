@@ -342,6 +342,16 @@ def test_process_bridge_command_session_list():
                     ]
                 }
             )
+        if req.full_url.endswith("/web/bootstrap"):
+            return _FakeHTTPResponse(
+                {
+                    "sessions": [
+                        {"id": "session-aaa", "campaign_id": "camp-1", "title": "Alpha"},
+                        {"id": "session-bbb", "campaign_id": "camp-2", "title": "Beta"},
+                        {"id": "session-ccc", "campaign_id": "camp-3", "title": "Gamma"},
+                    ]
+                }
+            )
         raise AssertionError(f"Unexpected URL: {req.full_url}")
 
     with patch("urllib.request.urlopen", side_effect=_urlopen):
@@ -349,11 +359,73 @@ def test_process_bridge_command_session_list():
 
     assert handled is True
     assert "Active sessions:" in (reply or "")
+    assert "Previous sessions:" in (reply or "")
     assert "session-aaa" in (reply or "")
     assert "session-bbb" in (reply or "")
+    assert "session-ccc" in (reply or "")
     assert "(current)" in (reply or "")
     assert active == "session-bbb"
     assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_list_shows_previous_when_no_active():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": []})
+        if req.full_url.endswith("/web/bootstrap"):
+            return _FakeHTTPResponse({"sessions": [{"id": "session-aaa", "campaign_id": "camp-1", "title": "Alpha"}]})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session list", client, None, None)
+
+    assert handled is True
+    assert "Active sessions:" in (reply or "")
+    assert "Previous sessions:" in (reply or "")
+    assert "session-aaa" in (reply or "")
+    assert active is None
+    assert campaign is None
+
+
+def test_process_bridge_command_session_show_log_for_previous_session():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": []})
+        if req.full_url.endswith("/web/bootstrap"):
+            return _FakeHTTPResponse(
+                {
+                    "sessions": [
+                        {"id": "session-prev-1", "campaign_id": "camp-1", "title": "Previous Session"},
+                    ]
+                }
+            )
+        if req.full_url.endswith("/web/session/session-prev-1"):
+            return _FakeHTTPResponse(
+                {
+                    "session": {
+                        "id": "session-prev-1",
+                        "log": [
+                            {"role": "player", "content": "hello"},
+                            {"role": "narrator", "content": "welcome back"},
+                        ],
+                    }
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session show log session-prev-1", client, None, None)
+
+    assert handled is True
+    assert "Session log for session-prev-1:" in (reply or "")
+    assert "**Player:** hello" in (reply or "")
+    assert "**Narrator:** welcome back" in (reply or "")
+    assert active is None
+    assert campaign is None
 
 
 def test_process_bridge_command_session_end_detaches_active():
@@ -375,11 +447,68 @@ def test_process_bridge_command_session_end_detaches_active():
     assert campaign == "camp-2"
 
 
+def test_process_bridge_command_session_end_includes_summary_before_detach_notice():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/session-bbb"):
+            return _FakeHTTPResponse({"session": {"id": "session-bbb"}})
+        if req.full_url.endswith("/web/session/session-bbb/end"):
+            return _FakeHTTPResponse(
+                {
+                    "ended": True,
+                    "summary": "The team secured the vault.",
+                    "start_prompt": "Open with the debrief scene.",
+                    "campaign_progress": "Chapter 2 complete.",
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session end", client, "session-bbb", "camp-2")
+
+    assert handled is True
+    assert "Session Summary:\nThe team secured the vault." in (reply or "")
+    assert "Start Here:\nOpen with the debrief scene." in (reply or "")
+    assert "Campaign Progress:\nChapter 2 complete." in (reply or "")
+    assert (reply or "").rstrip().endswith("Ended and detached from session session-bbb.")
+    assert active is None
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_quit_alias_ends_and_detaches_active():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/session-bbb"):
+            return _FakeHTTPResponse({"session": {"id": "session-bbb"}})
+        if req.full_url.endswith("/web/session/session-bbb/end"):
+            return _FakeHTTPResponse({"ended": True})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session quit", client, "session-bbb", "camp-2")
+
+    assert handled is True
+    assert "Ended and detached from session session-bbb." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
 def test_process_bridge_command_session_end_without_active():
     client = MCPWebClient("http://localhost:8000")
     handled, reply, active, campaign = process_bridge_command("/session end", client, None, "camp-2")
     assert handled is True
     assert "No active session to end." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_quit_without_active():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/session quit", client, None, "camp-2")
+    assert handled is True
+    assert "No active session to quit." in (reply or "")
     assert active is None
     assert campaign == "camp-2"
 
@@ -418,6 +547,25 @@ def test_process_bridge_command_session_end_keeps_attachment_when_not_ended():
     assert handled is True
     assert "Could not end session session-bbb; still attached." in (reply or "")
     assert active == "session-bbb"
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_quit_detaches_when_not_ended():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/session-bbb"):
+            return _FakeHTTPResponse({"session": {"id": "session-bbb"}})
+        if req.full_url.endswith("/web/session/session-bbb/end"):
+            return _FakeHTTPResponse({"ended": False})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session quit", client, "session-bbb", "camp-2")
+
+    assert handled is True
+    assert "Session session-bbb was not active in MCP; detached from session anyway." in (reply or "")
+    assert active is None
     assert campaign == "camp-2"
 
 
@@ -505,6 +653,44 @@ def test_process_bridge_command_prefixed_cli_style_campaign_list():
     assert "Alpha" in (reply or "")
 
 
+def test_process_bridge_command_campaign_plan():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/campaigns"):
+            return _FakeHTTPResponse([{"id": "camp-11111111", "name": "Alpha"}])
+        if req.full_url.endswith("/campaigns/camp-11111111/plan"):
+            payload = json.loads(req.data.decode("utf-8"))
+            assert payload == {"brief": "street-level mystery"}
+            return _FakeHTTPResponse(
+                {
+                    "campaign": {"id": "camp-11111111", "name": "Alpha"},
+                    "plan": "Act I: The Hook\nAct II: The Chase",
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command(
+            "/campaign plan camp-1111 street-level mystery", client, None, None
+        )
+
+    assert handled is True
+    assert "Campaign plan for 'Alpha' (camp-11111111):" in (reply or "")
+    assert "Act I: The Hook" in (reply or "")
+    assert active is None
+    assert campaign == "camp-11111111"
+
+
+def test_process_bridge_command_campaign_plan_usage():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/campaign plan camp-1111", client, None, None)
+    assert handled is True
+    assert "Usage: /campaign plan <campaign-id-or-prefix> <brief>" in (reply or "")
+    assert active is None
+    assert campaign is None
+
+
 def test_process_bridge_command_session_start_title_uses_last_campaign_when_ref_not_found():
     client = MCPWebClient("http://localhost:8000")
 
@@ -584,10 +770,11 @@ async def test_clear_discord_channel_history_deletes_full_history():
     now = datetime.now(timezone.utc)
 
     class _FakeHistoryMessage:
-        def __init__(self, name, created_at, msg_id):
+        def __init__(self, name, created_at, msg_id, pinned=False):
             self.name = name
             self.created_at = created_at
             self.id = msg_id
+            self.pinned = pinned
 
         async def delete(self):
             deleted.append(self.name)
@@ -598,6 +785,7 @@ async def test_clear_discord_channel_history_deletes_full_history():
                 _FakeHistoryMessage("a", now - timedelta(days=30), 1),
                 _FakeHistoryMessage("b", now - timedelta(days=2), 2),
                 _FakeHistoryMessage("c", now - timedelta(hours=1), 3),
+                _FakeHistoryMessage("pinned", now - timedelta(hours=1), 4, pinned=True),
             ]
 
         def history(self, **kwargs):
@@ -616,12 +804,57 @@ async def test_clear_discord_channel_history_deletes_full_history():
 
     cleared = await clear_discord_channel_history(_FakeChannel())
 
-    assert cleared.deleted_count == 3
+    assert cleared.deleted_count == 4
     assert cleared.failed_count == 0
     assert cleared.command_deleted is True
     assert calls == [{"limit": None}]
     assert purges and purges[0]["limit"] is None and callable(purges[0]["check"])
-    assert purged == ["b", "c"]
+    assert purged == ["b", "c", "pinned"]
+    assert deleted == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_clear_discord_channel_history_preserves_pinned_messages():
+    deleted = []
+    purged = []
+    now = datetime.now(timezone.utc)
+
+    class _FakeHistoryMessage:
+        def __init__(self, name, created_at, msg_id, pinned=False):
+            self.name = name
+            self.created_at = created_at
+            self.id = msg_id
+            self.pinned = pinned
+
+        async def delete(self):
+            deleted.append(self.name)
+
+    class _FakeChannel:
+        def __init__(self):
+            self.items = [
+                _FakeHistoryMessage("a", now - timedelta(days=30), 1),
+                _FakeHistoryMessage("b", now - timedelta(days=2), 2),
+                _FakeHistoryMessage("pinned-old", now - timedelta(days=30), 3, pinned=True),
+                _FakeHistoryMessage("pinned-new", now - timedelta(hours=1), 4, pinned=True),
+            ]
+
+        def history(self, **kwargs):
+            async def _iter():
+                for item in self.items:
+                    yield item
+
+            return _iter()
+
+        async def purge(self, **kwargs):
+            matched = [item for item in self.items if kwargs["check"](item)]
+            purged.extend(item.name for item in matched)
+            return matched
+
+    cleared = await clear_discord_channel_history(_FakeChannel(), preserve_pinned=True)
+
+    assert cleared.deleted_count == 2
+    assert cleared.failed_count == 0
+    assert purged == ["b"]
     assert deleted == ["a"]
 
 
@@ -706,7 +939,7 @@ async def test_clear_discord_channel_history_tracks_command_message_deletion():
 
 
 @pytest.mark.asyncio
-async def test_discord_bridge_clear_command_deletes_entire_channel():
+async def test_discord_bridge_clear_command_preserves_pinned_messages():
     captured = {}
 
     class _FakeIntents:
@@ -750,8 +983,15 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
             self.history_calls = []
             now = datetime.now(timezone.utc)
             self.items = [
-                types.SimpleNamespace(id=10, created_at=now - timedelta(days=30), delete=self._delete_factory("m1")),
-                types.SimpleNamespace(id=11, created_at=now - timedelta(hours=1), delete=self._delete_factory("m2")),
+                types.SimpleNamespace(id=10, name="m1", created_at=now - timedelta(days=30), delete=self._delete_factory("m1")),
+                types.SimpleNamespace(id=11, name="m2", created_at=now - timedelta(hours=1), delete=self._delete_factory("m2")),
+                types.SimpleNamespace(
+                    id=12,
+                    name="pinned",
+                    created_at=now - timedelta(hours=1),
+                    pinned=True,
+                    delete=self._delete_factory("pinned"),
+                ),
             ]
 
         def permissions_for(self, subject):
@@ -772,7 +1012,8 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
             if kwargs["check"](captured["message"]):
                 captured["message"].deleted = True
                 matched.append(captured["message"])
-            self.purged.extend("m2" for item in matched if item is not captured["message"])
+            self.purged.extend(getattr(item, "name", "") for item in matched if item is not captured["message"])
+            self.purged = [name for name in self.purged if name]
             return matched
 
         def _delete_factory(self, name):
@@ -818,6 +1059,8 @@ async def test_discord_bridge_clear_command_deletes_entire_channel():
     assert channel.history_calls == [{"limit": None}]
     assert channel.deleted == ["m1"]
     assert channel.purged == ["m2"]
+    assert "pinned" not in channel.deleted
+    assert "pinned" not in channel.purged
 
 
 @pytest.mark.asyncio
@@ -857,7 +1100,18 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
             self.purged = []
             self.history_calls = []
             now = datetime.now(timezone.utc)
-            self.items = [types.SimpleNamespace(id=10, created_at=now - timedelta(hours=1), delete=self._delete_factory("m1"))]
+            self.items = [
+                types.SimpleNamespace(id=10, name="m1", created_at=now - timedelta(hours=1), delete=self._delete_factory("m1"))
+            ]
+            self.items.append(
+                types.SimpleNamespace(
+                    id=11,
+                    name="pinned",
+                    created_at=now - timedelta(hours=1),
+                    pinned=True,
+                    delete=self._delete_factory("pinned"),
+                )
+            )
 
         def permissions_for(self, subject):
             if subject is captured["message"].author:
@@ -877,7 +1131,8 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
             if kwargs["check"](captured["message"]):
                 captured["message"].deleted = True
                 matched.append(captured["message"])
-            self.purged.extend("m1" for item in matched if item is not captured["message"])
+            self.purged.extend(getattr(item, "name", "") for item in matched if item is not captured["message"])
+            self.purged = [name for name in self.purged if name]
             return matched
 
         def _delete_factory(self, name):
@@ -920,7 +1175,7 @@ async def test_discord_bridge_clear_command_does_not_require_active_session():
     assert message.deleted is True
     assert channel.history_calls == [{"limit": None}]
     assert channel.deleted == []
-    assert channel.purged == ["m1"]
+    assert sorted(channel.purged) == ["m1", "pinned"]
 
 
 @pytest.mark.asyncio
@@ -1015,6 +1270,86 @@ async def test_discord_bridge_clear_command_reports_partial_success_when_command
     assert channel.purged == ["m1"]
     assert message.deleted is False
     assert message.replies == ["Channel history cleared, but this command message could not be deleted."]
+
+
+@pytest.mark.asyncio
+async def test_discord_bridge_session_use_attaches_without_missing_method_error():
+    class _FakeIntents:
+        message_content = False
+
+        @staticmethod
+        def default():
+            return _FakeIntents()
+
+    class _FakeClientBase:
+        last_instance = None
+
+        def __init__(self, *, intents):
+            self.intents = intents
+            self.user = types.SimpleNamespace(bot=True, id=999)
+            _FakeClientBase.last_instance = self
+
+        def run(self, token):
+            return None
+
+        async def close(self):
+            return None
+
+    fake_discord = types.SimpleNamespace(Client=_FakeClientBase, Intents=_FakeIntents)
+
+    class _FakeTyping:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeChannel:
+        id = 12345
+
+        def typing(self):
+            return _FakeTyping()
+
+        async def send(self, text):
+            return None
+
+    class _FakeMessage:
+        def __init__(self, channel):
+            self.author = types.SimpleNamespace(bot=False, id=1)
+            self.channel = channel
+            self.content = "/session use session-1"
+            self.guild = types.SimpleNamespace(me=types.SimpleNamespace(id=2))
+            self.replies = []
+
+        async def reply(self, text):
+            self.replies.append(text)
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": [{"id": "session-1"}]})
+        if req.full_url.endswith("/web/session/session-1"):
+            return _FakeHTTPResponse(
+                {
+                    "is_active": True,
+                    "session": {"id": "session-1", "log": []},
+                    "campaign": {"id": "camp-1"},
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch.dict(sys.modules, {"discord": fake_discord}):
+        from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
+
+        run_discord_bridge(DiscordBridgeSettings(discord_token="token", channel_id=12345))
+
+    client = _FakeClientBase.last_instance
+    message = _FakeMessage(_FakeChannel())
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        await client.on_message(message)
+
+    assert message.replies
+    assert message.replies[0].startswith("Active session set to session-1 (active)")
+    assert not any("Could not attach session" in reply for reply in message.replies)
 
 
 def test_format_session_log_entry():
