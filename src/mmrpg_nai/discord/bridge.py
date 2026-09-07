@@ -92,6 +92,9 @@ class MCPWebClient:
     def create_campaign(self, name: str, description: str = "") -> dict[str, Any]:
         return self._post("/campaigns", {"name": name, "description": description})
 
+    def plan_campaign(self, campaign_id: str, brief: str) -> dict[str, Any]:
+        return self._post(f"/campaigns/{campaign_id}/plan", {"brief": brief})
+
     def start_session(self, campaign_id: str, title: str | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"campaign_id": campaign_id}
         if title:
@@ -141,6 +144,19 @@ class MCPWebClient:
             return all_match
 
         raise MCPBridgeError("Session not found. Use /session list to view sessions.")
+
+    def resolve_campaign_id(self, campaign_ref: str) -> str:
+        ref = campaign_ref.strip()
+        campaigns = self.list_campaigns()
+        exact = [c for c in campaigns if str(c.get("id", "")).strip() == ref]
+        if len(exact) == 1:
+            return str(exact[0].get("id", "")).strip()
+        prefix = [c for c in campaigns if str(c.get("id", "")).strip().startswith(ref)]
+        if len(prefix) == 1:
+            return str(prefix[0].get("id", "")).strip()
+        if len(prefix) > 1:
+            raise MCPBridgeError("Campaign prefix matches multiple campaigns; be more specific.")
+        raise MCPBridgeError("Campaign not found. Use /campaign list to view campaigns.")
 
     def ensure_active_session(self, session_id: str, resume_if_inactive: bool = True) -> tuple[str, bool]:
         state = self.get_session_state(session_id)
@@ -311,6 +327,7 @@ def process_bridge_command(
                 "Commands:\n"
                 "• /campaign list\n"
                 "• /campaign new <name>\n"
+                "• /campaign plan <campaign-id-or-prefix> <brief>\n"
                 "• /session start [campaign-id-or-prefix] [title]\n"
                 "• /session run [campaign-id-or-prefix] [title]\n"
                 "• /session list\n"
@@ -337,7 +354,7 @@ def process_bridge_command(
 
     if cmd == "campaign":
         if len(parts) < 2:
-            return True, "Usage: /campaign list|new ...", active_session_id, last_campaign_id
+            return True, "Usage: /campaign list|new|plan ...", active_session_id, last_campaign_id
         action = parts[1].lower()
         if action == "list":
             campaigns = mcp.list_campaigns()
@@ -365,7 +382,34 @@ def process_bridge_command(
                 active_session_id,
                 campaign_id,
             )
-        return True, "Usage: /campaign list or /campaign new <name>", active_session_id, last_campaign_id
+        if action == "plan":
+            if len(parts) < 4 or not parts[2].strip() or not " ".join(parts[3:]).strip():
+                return True, "Usage: /campaign plan <campaign-id-or-prefix> <brief>", active_session_id, last_campaign_id
+            campaign_ref = parts[2].strip()
+            brief = " ".join(parts[3:]).strip()
+            try:
+                campaign_id = mcp.resolve_campaign_id(campaign_ref)
+                planned = mcp.plan_campaign(campaign_id, brief)
+            except MCPBridgeError as exc:
+                return True, str(exc), active_session_id, last_campaign_id
+            campaign = planned.get("campaign") or {}
+            resolved_campaign_id = str(campaign.get("id", "")).strip() or campaign_id
+            campaign_name = str(campaign.get("name", resolved_campaign_id)).strip() or resolved_campaign_id
+            plan = str(planned.get("plan", "")).strip()
+            if not plan:
+                return (
+                    True,
+                    f"Campaign plan generated for '{campaign_name}' ({resolved_campaign_id}), but no plan text was returned.",
+                    active_session_id,
+                    resolved_campaign_id,
+                )
+            return (
+                True,
+                f"Campaign plan for '{campaign_name}' ({resolved_campaign_id}):\n{plan}",
+                active_session_id,
+                resolved_campaign_id,
+            )
+        return True, "Usage: /campaign list or /campaign new <name> or /campaign plan <campaign-id-or-prefix> <brief>", active_session_id, last_campaign_id
 
     if cmd == "session":
         if len(parts) < 2:

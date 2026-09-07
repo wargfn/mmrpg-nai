@@ -653,6 +653,44 @@ def test_process_bridge_command_prefixed_cli_style_campaign_list():
     assert "Alpha" in (reply or "")
 
 
+def test_process_bridge_command_campaign_plan():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/campaigns"):
+            return _FakeHTTPResponse([{"id": "camp-11111111", "name": "Alpha"}])
+        if req.full_url.endswith("/campaigns/camp-11111111/plan"):
+            payload = json.loads(req.data.decode("utf-8"))
+            assert payload == {"brief": "street-level mystery"}
+            return _FakeHTTPResponse(
+                {
+                    "campaign": {"id": "camp-11111111", "name": "Alpha"},
+                    "plan": "Act I: The Hook\nAct II: The Chase",
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command(
+            "/campaign plan camp-1111 street-level mystery", client, None, None
+        )
+
+    assert handled is True
+    assert "Campaign plan for 'Alpha' (camp-11111111):" in (reply or "")
+    assert "Act I: The Hook" in (reply or "")
+    assert active is None
+    assert campaign == "camp-11111111"
+
+
+def test_process_bridge_command_campaign_plan_usage():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/campaign plan camp-1111", client, None, None)
+    assert handled is True
+    assert "Usage: /campaign plan <campaign-id-or-prefix> <brief>" in (reply or "")
+    assert active is None
+    assert campaign is None
+
+
 def test_process_bridge_command_session_start_title_uses_last_campaign_when_ref_not_found():
     client = MCPWebClient("http://localhost:8000")
 

@@ -721,6 +721,7 @@ the session appears under active sessions in the web interface immediately.
 If no session is set, control the bridge from Discord with commands:
 - `/campaign list`
 - `/campaign new <name>`
+- `/campaign plan <campaign-id-or-prefix> <brief>`
 - `/session start [campaign-id-or-prefix] [title]`
 - `/session list`
 - `/session show log <session-id-or-prefix>`
@@ -733,6 +734,7 @@ If no session is set, control the bridge from Discord with commands:
 - `/help`
 
 The bridge also accepts CLI-style prefixed commands like `/mmrpg-nai campaign list`.
+`/campaign plan <campaign-id-or-prefix> <brief>` generates and saves a campaign plan, then prints it in Discord.
 Using `/session use <session-id-or-prefix>` validates and selects matching sessions (including those started in the web UI).
 If you select an inactive session, it is set as active target and will resume automatically on the next message when resume mode is enabled.
 `/session list` includes both active and previous sessions.

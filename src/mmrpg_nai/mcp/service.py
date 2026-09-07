@@ -110,6 +110,15 @@ class WebSessionEndResponse(BaseModel):
     campaign_progress: str = ""
 
 
+class CampaignPlanRequest(BaseModel):
+    brief: str
+
+
+class CampaignPlanResponse(BaseModel):
+    campaign: Campaign
+    plan: str
+
+
 class UserWriteRequest(BaseModel):
     first_name: str
     last_name: str = ""
@@ -501,6 +510,26 @@ def update_campaign(id: str, campaign: Campaign) -> Campaign:
 @app.delete("/campaigns/{id}", tags=["campaigns"])
 def delete_campaign(id: str) -> dict[str, bool]:
     return {"deleted": get_store().campaigns.delete(id)}
+
+
+@app.post("/campaigns/{id}/plan", response_model=CampaignPlanResponse, tags=["campaigns"])
+def plan_campaign(id: str, req: CampaignPlanRequest) -> CampaignPlanResponse:
+    store = get_store()
+    campaign = store.campaigns.load(id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    brief = req.brief.strip()
+    if not brief:
+        raise HTTPException(status_code=400, detail="brief is required")
+    cfg = store.load_config()
+    narrator = Narrator(cfg, store)
+    try:
+        plan = narrator.plan_campaign(brief).strip()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    campaign.plan = plan
+    store.campaigns.save(campaign)
+    return CampaignPlanResponse(campaign=campaign, plan=plan)
 
 
 # ---------------------------------------------------------------------------
