@@ -205,7 +205,7 @@ class DiscordChannelClearResult:
 
 
 async def clear_discord_channel_history(
-    channel: Any, *, exclude_message: Any | None = None
+    channel: Any, *, exclude_message: Any | None = None, preserve_pinned: bool = False
 ) -> DiscordChannelClearResult:
     deleted = 0
     failed = 0
@@ -215,6 +215,8 @@ async def clear_discord_channel_history(
     recent_messages: list[Any] = []
     older_messages: list[tuple[Any, bool]] = []
     async for item in channel.history(limit=None):
+        if preserve_pinned and bool(getattr(item, "pinned", False)):
+            continue
         is_command_message = exclude_message is not None and (
             item is exclude_message or (excluded_id is not None and getattr(item, "id", None) == excluded_id)
         )
@@ -713,7 +715,8 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     return
                 if handled:
                     normalized_words = _normalized_bridge_command_words(text)
-                    is_clear_command = normalized_words == ["clear"] or normalized_words[:2] == ["channel", "clear"]
+                    is_clear_command = normalized_words == ["clear"]
+                    is_channel_clear_command = normalized_words[:2] == ["channel", "clear"]
                     needs_activation = (
                         normalized_words[:2] == ["session", "use"]
                         or normalized_words[:2] == ["session", "start"]
@@ -722,7 +725,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     )
                     needs_detach = normalized_words[:2] in (["session", "detach"], ["session", "end"])
                     previous_active = self.active_session_id
-                    if is_clear_command:
+                    if is_clear_command or is_channel_clear_command:
                         permissions_for = getattr(message.channel, "permissions_for", None)
                         if not callable(permissions_for):
                             await message.reply("Channel permissions are unavailable; cannot clear channel history.")
@@ -740,7 +743,11 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             await message.reply("Bot needs Read Message History permission to clear the channel.")
                             return
                         try:
-                            cleared = await clear_discord_channel_history(message.channel, exclude_message=message)
+                            cleared = await clear_discord_channel_history(
+                                message.channel,
+                                exclude_message=message,
+                                preserve_pinned=is_clear_command,
+                            )
                         except Exception as exc:
                             await message.reply(f"Could not clear channel: {exc}")
                             return

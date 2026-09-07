@@ -728,6 +728,8 @@ If no session is set, control the bridge from Discord with commands:
 - `/session end`
 - `/session quit`
 - `/session status`
+- `/clear`
+- `/channel clear`
 - `/help`
 
 The bridge also accepts CLI-style prefixed commands like `/mmrpg-nai campaign list`.
@@ -736,6 +738,7 @@ If you select an inactive session, it is set as active target and will resume au
 `/session list` includes both active and previous sessions.
 `/session show log <session-id-or-prefix>` prints the selected session log in Discord, including previous sessions.
 `/session quit` is an alias for ending the current session; when MCP returns close output, session summary/campaign progress are posted before detach.
+`/clear` clears channel history while preserving pinned messages. `/channel clear` clears all messages, including pinned.
 Session attach/start from Discord now also verifies the session is present in MCP web active sessions.
 
 | Option | Default | Description |
