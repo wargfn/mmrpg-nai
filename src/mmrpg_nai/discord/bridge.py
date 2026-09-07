@@ -441,7 +441,7 @@ def process_bridge_command(
             if not active_session_id:
                 return True, "No active session to detach.", active_session_id, last_campaign_id
             return True, f"Detached from session {active_session_id}.", None, last_campaign_id
-        if action in {"end", "quit"}:
+        if action == "end":
             if not active_session_id:
                 return True, "No active session to end.", active_session_id, last_campaign_id
             try:
@@ -477,6 +477,44 @@ def process_bridge_command(
                 True,
                 f"Could not end session {target_session_id}; still attached.",
                 active_session_id,
+                last_campaign_id,
+            )
+        if action == "quit":
+            if not active_session_id:
+                return True, "No active session to quit.", active_session_id, last_campaign_id
+            try:
+                state = mcp.get_session_state(active_session_id)
+                session = state.get("session") or {}
+                target_session_id = str(session.get("id", "")).strip() or active_session_id
+            except MCPBridgeError as exc:
+                if str(exc).startswith("HTTP 404:"):
+                    target_session_id = active_session_id
+                else:
+                    raise
+            ended = mcp.end_session(target_session_id)
+            if bool(ended.get("ended")):
+                lines: list[str] = []
+                summary = str(ended.get("summary", "")).strip()
+                start_prompt = str(ended.get("start_prompt", "")).strip()
+                campaign_progress = str(ended.get("campaign_progress", "")).strip()
+                if summary:
+                    lines.extend(["Session Summary:", summary])
+                if start_prompt:
+                    if lines:
+                        lines.append("")
+                    lines.extend(["Start Here:", start_prompt])
+                if campaign_progress:
+                    if lines:
+                        lines.append("")
+                    lines.extend(["Campaign Progress:", campaign_progress])
+                if lines:
+                    lines.append("")
+                lines.append(f"Ended and detached from session {target_session_id}.")
+                return True, "\n".join(lines), None, last_campaign_id
+            return (
+                True,
+                f"Session {target_session_id} was not active in MCP; detached from session anyway.",
+                None,
                 last_campaign_id,
             )
         if action == "use":

@@ -504,6 +504,15 @@ def test_process_bridge_command_session_end_without_active():
     assert campaign == "camp-2"
 
 
+def test_process_bridge_command_session_quit_without_active():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/session quit", client, None, "camp-2")
+    assert handled is True
+    assert "No active session to quit." in (reply or "")
+    assert active is None
+    assert campaign == "camp-2"
+
+
 def test_process_bridge_command_session_detach_unsets_active():
     client = MCPWebClient("http://localhost:8000")
     handled, reply, active, campaign = process_bridge_command("/session detach", client, "session-bbb", "camp-2")
@@ -538,6 +547,25 @@ def test_process_bridge_command_session_end_keeps_attachment_when_not_ended():
     assert handled is True
     assert "Could not end session session-bbb; still attached." in (reply or "")
     assert active == "session-bbb"
+    assert campaign == "camp-2"
+
+
+def test_process_bridge_command_session_quit_detaches_when_not_ended():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/session-bbb"):
+            return _FakeHTTPResponse({"session": {"id": "session-bbb"}})
+        if req.full_url.endswith("/web/session/session-bbb/end"):
+            return _FakeHTTPResponse({"ended": False})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/session quit", client, "session-bbb", "camp-2")
+
+    assert handled is True
+    assert "Session session-bbb was not active in MCP; detached from session anyway." in (reply or "")
+    assert active is None
     assert campaign == "camp-2"
 
 
