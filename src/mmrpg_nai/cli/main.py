@@ -24,6 +24,7 @@ from mmrpg_nai.adventure.importer import (
     export_template_schema,
     import_adventure,
 )
+from mmrpg_nai.llm.narrator import narrate_d616_roll
 from mmrpg_nai.models.core import (
     Campaign,
     CampaignSettings,
@@ -124,6 +125,45 @@ def _mcp_post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[st
         raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
     except urlerror.URLError as exc:
         raise RuntimeError(f"Could not reach MCP service at {base_url}: {exc}") from exc
+
+
+def _print_session_response(mode: str, output: str) -> None:
+    if mode == "meta":
+        console.print("[bold yellow]Narrator (meta)[/bold yellow]")
+        console.print(Panel(Markdown(output), border_style="yellow"))
+        return
+    if mode == "roll":
+        console.print("[bold magenta]Narrator (roll)[/bold magenta]")
+        console.print(Panel(Markdown(output), border_style="magenta"))
+        return
+    console.print("[bold blue]Narrator[/bold blue]")
+    console.print(Panel(Markdown(output), border_style="blue"))
+
+
+def _roll_without_session(data_dir: str) -> None:
+    cfg = _get_store(data_dir).load_config()
+    try:
+        _print_session_response("roll", narrate_d616_roll(cfg))
+    except Exception as exc:
+        if isinstance(exc, EnvironmentError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Token not set[/bold red]", border_style="red"))
+        elif isinstance(exc, PermissionError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Authentication error[/bold red]", border_style="red"))
+        elif isinstance(exc, ConnectionError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Connection error[/bold red]", border_style="red"))
+        elif isinstance(exc, RuntimeError):
+            console.print(Panel(str(exc), title="[bold red]⚠ API error[/bold red]", border_style="red"))
+        else:
+            console.print(f"[red]Error: {exc}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("roll")
+def roll(
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Roll D616 and ask the AI to narrate the result."""
+    _roll_without_session(data_dir)
 
 
 def _mcp_session_listed_active(base_url: str, session_id: str) -> bool:
@@ -1271,6 +1311,7 @@ def session_run(
     console.print(
         "[dim]Type your action or dialogue. "
         "Wrap text in [square brackets] for out-of-game meta directions. "
+        "Enter '/roll' for a D616 roll. "
         "Enter 'quit' or 'exit' to end the session.[/dim]\n"
     )
 
@@ -1307,7 +1348,12 @@ def session_run(
         meta_match = _META_RE.match(player_input)
         console.print()
 
-        if meta_match:
+        if player_input.strip().lower() == "/roll":
+            try:
+                _print_session_response("roll", narrator.roll_d616())
+            except Exception as exc:
+                _print_llm_error(exc)
+        elif meta_match:
             direction = meta_match.group(1).strip()
             console.print("[bold yellow]Narrator (meta)[/bold yellow]")
             try:
@@ -1553,6 +1599,7 @@ def session_attach(
             f"[bold]Campaign:[/bold] {str(selected.get('campaign_id', ''))[:8]}\n"
             f"[dim]MCP: {mcp_base_url}[/dim]\n\n"
             f"[dim]Type your action/dialogue. Use [square brackets] for meta. "
+            f"Enter '/roll' for a D616 roll. "
             f"Enter 'quit' or 'exit' to detach.[/dim]",
             title="🔗 Attached to Active Session",
         )
@@ -1573,21 +1620,17 @@ def session_attach(
             continue
 
         try:
-            resp = _mcp_post_json(mcp_base_url, f"/web/session/{selected_id}/chat", {"message": player_input})
+            if player_input.strip().lower() == "/roll":
+                resp = _mcp_post_json(mcp_base_url, f"/web/session/{selected_id}/roll", {})
+            else:
+                resp = _mcp_post_json(mcp_base_url, f"/web/session/{selected_id}/chat", {"message": player_input})
         except Exception as exc:
             console.print(Panel(str(exc), title="[bold red]⚠ MCP chat error[/bold red]", border_style="red"))
             break
 
         mode = str(resp.get("mode", "narrate"))
         output = str(resp.get("response", ""))
-        if mode == "meta":
-            console.print("[bold yellow]Narrator (meta)[/bold yellow]")
-        else:
-            console.print("[bold blue]Narrator[/bold blue]")
-        if mode == "meta":
-            console.print(Panel(Markdown(output), border_style="yellow"))
-        else:
-            console.print(Panel(Markdown(output), border_style="blue"))
+        _print_session_response(mode, output)
         console.print()
 
     console.print("[bold]Detached from active session.[/bold]")

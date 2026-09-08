@@ -71,6 +71,38 @@ def test_session_attach_chats_with_active_session():
     assert "Detached from active session." in result.output
 
 
+def test_session_attach_rolls_in_active_session():
+    active_session_id = "session-1234abcd"
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse(
+                {
+                    "sessions": [
+                        {
+                            "id": active_session_id,
+                            "campaign_id": "campaign-1",
+                            "title": "Session 1",
+                            "user_ids": [],
+                        }
+                    ]
+                }
+            )
+        if req.full_url.endswith(f"/web/session/{active_session_id}/roll"):
+            return _FakeHTTPResponse({"response": "Rolled Marvel, 1, 6", "mode": "roll", "log": []})
+        if req.full_url.endswith(f"/web/session/{active_session_id}") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": True})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        with patch("mmrpg_nai.cli.main.Prompt.ask", side_effect=["/roll", "quit"]):
+            result = runner.invoke(app, ["session", "attach", "--session-id", active_session_id])
+
+    assert result.exit_code == 0, result.output
+    assert "Narrator (roll)" in result.output
+    assert "Rolled Marvel, 1, 6" in result.output
+
+
 def test_session_attach_can_resume_inactive_session_by_id():
     base_session_id = "session-old1234"
     resumed_session_id = "session-new5678"

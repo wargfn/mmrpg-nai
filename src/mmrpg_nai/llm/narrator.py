@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterator
 
+from mmrpg_nai.dice import build_d616_prompt, roll_d616 as perform_d616_roll
 from mmrpg_nai.llm.client import LLMClient
 from mmrpg_nai.models.core import (
     Campaign,
@@ -228,6 +229,17 @@ class Narrator:
             print()
         return "".join(chunks)
 
+    def roll_d616(self) -> str:
+        """Roll D616 and ask the narrator to interpret the exact result."""
+        roll = perform_d616_roll()
+        self._messages.append({"role": "system", "content": f"[D616 ROLL]: {roll.summary_text}"})
+        self._log(role="meta", content=roll.summary_text)
+        response = self.llm.complete([*self._messages, {"role": "user", "content": build_d616_prompt(roll)}], stream=False)
+        text = str(response)
+        self._messages.append({"role": "assistant", "content": text})
+        self._log(role="narrator", content=text)
+        self.store.append_log(self._session)
+        return text
     def recap_last_session(self, last_session: "Session") -> str:
         """Generate a brief AI recap of the previous session to open the current one."""
         if not last_session.log:
@@ -384,3 +396,14 @@ class Narrator:
             content=content,
         )
         self._session.log.append(entry)
+
+
+def narrate_d616_roll(cfg: NarratorConfig) -> str:
+    """Roll D616 and narrate it without requiring session context."""
+    roll = perform_d616_roll()
+    llm = LLMClient(cfg.llm)
+    messages = [
+        {"role": "system", "content": cfg.system_prompt},
+        {"role": "user", "content": build_d616_prompt(roll)},
+    ]
+    return str(llm.complete(messages, stream=False))

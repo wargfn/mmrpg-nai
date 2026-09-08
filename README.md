@@ -103,6 +103,7 @@ Commands:
   config     Manage narrator configuration
   campaign   Manage campaigns
   session    Manage and run sessions
+  roll       Roll D616 and narrate the result
   character  Manage characters and stat-blocks
   equipment  Manage equipment
   powerset   Manage power sets
@@ -349,6 +350,7 @@ mmrpg-nai session remove-user <session-id> <user-id>
 Start an interactive narration session. Prompts you to pick a campaign, characters,
 and players/users, then generates an AI recap of the previous session before play begins.
 If no player characters or users exist yet, it can create them during startup.
+During play, enter `/roll` to have the AI make and interpret a D616 roll.
 
 At **session startup**, if the campaign has a plan and/or progress summary, they are
 automatically injected into the Narrator's system prompt so the AI knows exactly where
@@ -405,6 +407,13 @@ mmrpg-nai session attach --session-id <session-id>
 
 # Or choose interactively from active sessions
 mmrpg-nai session attach
+```
+While attached, enter `/roll` to have the AI make and interpret a D616 roll in that live session.
+
+#### `roll`
+Roll D616 and ask the configured AI to narrate the result without needing an active session.
+```bash
+mmrpg-nai roll
 ```
 
 #### `session log <session-id>`
@@ -732,6 +741,7 @@ If no session is set, control the bridge from Discord with commands:
 - `/session end`
 - `/session quit`
 - `/session status`
+- `/roll`
 - `/clear`
 - `/channel clear`
 - `/help`
@@ -743,6 +753,7 @@ If you select an inactive session, it is set as active target and will resume au
 `/session list` includes both active and previous sessions.
 `/session show log <session-id-or-prefix>` prints the selected session log in Discord, including previous sessions.
 `/session quit` attempts to end the current session and then detaches from the bridge; when MCP returns close output, session summary/campaign progress are posted before detach.
+`/roll` asks the AI to make and interpret a D616 roll, whether or not a session is currently active.
 `/clear` clears channel history while preserving pinned messages. `/channel clear` clears all messages, including pinned.
 Session attach/start from Discord now also verifies the session is present in MCP web active sessions.
 
@@ -766,8 +777,10 @@ Session attach/start from Discord now also verifies the session is present in MC
 | GET | `/web/bootstrap` | Campaign/session/character data for web UI |
 | GET | `/web/active-sessions` | List currently active web chat sessions for attach workflows |
 | POST | `/web/session/start` | Start a new chat session or create a resumed follow-up session from an existing one |
+| POST | `/web/roll` | Roll and interpret a D616 result without session context |
 | GET | `/web/session/{id}` | Fetch current session state/log for multi-client sync |
 | POST | `/web/session/{id}/chat` | Send chat or meta-direction message |
+| POST | `/web/session/{id}/roll` | Roll and interpret a D616 result in the active session |
 | POST | `/web/session/{id}/end` | Mark in-memory web chat session ended |
 | GET/POST | `/users` | List / create users |
 | GET/PUT/DELETE | `/users/{user_id}` | Get / update / delete a user |

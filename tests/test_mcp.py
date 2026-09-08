@@ -205,6 +205,13 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
             self.store.sessions.save(self.session)
             return out
 
+        def roll_d616(self):
+            self.session.log.append(LogEntry(role="meta", content="D616 roll: Marvel, 1, 6"))
+            out = "Rolled Marvel, 1, 6 for 13 — ultimate fantastic!"
+            self.session.log.append(LogEntry(role="narrator", content=out))
+            self.store.sessions.save(self.session)
+            return out
+
     monkeypatch.setattr(service, "Narrator", DummyNarrator)
 
     campaign = client.post("/campaigns", json={"name": "Campaign 1", "description": "D"}).json()
@@ -239,6 +246,12 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     assert r.json()["response"] == "Meta handled: raise the tension"
     assert r.json()["mode"] == "meta"
 
+    r = client.post(f"/web/session/{session_id}/roll")
+    assert r.status_code == 200
+    assert r.json()["response"] == "Rolled Marvel, 1, 6 for 13 — ultimate fantastic!"
+    assert r.json()["mode"] == "roll"
+    assert any(e["role"] == "meta" and "D616 roll" in e["content"] for e in r.json()["log"])
+
     state = client.get(f"/web/session/{session_id}")
     assert state.status_code == 200
     assert state.json()["session"]["id"] == session_id
@@ -272,6 +285,15 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
 
     touched_user_after_resume = client.get(f"/users/{user['id']}").json()
     assert len(touched_user_after_resume["session_timestamps"]) == 2
+
+
+def test_web_roll_without_session(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(service, "narrate_d616_roll", lambda cfg: "Rolled 11 — standard success.")
+
+    r = client.post("/web/roll")
+
+    assert r.status_code == 200
+    assert r.json() == {"response": "Rolled 11 — standard success.", "mode": "roll"}
 
 
 def test_web_multiple_sessions_isolated(client: TestClient, monkeypatch: pytest.MonkeyPatch):
