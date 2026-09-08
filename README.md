@@ -711,6 +711,9 @@ mmrpg-nai serve-discord --channel-id <discord-channel-id>
 
 # Optional: pre-bind to an existing session
 mmrpg-nai serve-discord --session-id <session-id> --channel-id <discord-channel-id>
+
+# Run as background service
+mmrpg-nai serve-discord --channel-id <discord-channel-id> --background
 ```
 
 If the session is no longer active in MCP memory, the bridge can auto-resume it (default enabled)
@@ -752,6 +755,7 @@ Session attach/start from Discord now also verifies the session is present in MC
 | `--token-env` | `DISCORD_BOT_TOKEN` | Env var with Discord bot token |
 | `--resume-if-inactive/--no-resume-if-inactive` | enabled | Auto-resume session when inactive |
 | `--command-prefix` | empty | Optional prefix filter (e.g. `!nai`) |
+| `--background/--foreground` | foreground mode | Run as a detached background process |
 
 **Available endpoints:**
 
