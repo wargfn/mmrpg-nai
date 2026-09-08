@@ -82,3 +82,59 @@ def test_serve_discord_allows_missing_session_id():
     settings = captured["settings"]
     assert settings.session_id is None
     assert settings.mcp_timeout_seconds == 120.0
+
+
+def test_serve_discord_background_spawns_bridge():
+    with patch.dict(os.environ, {"DISCORD_BOT_TOKEN": "token"}):
+        with patch("mmrpg_nai.cli.main._spawn_background_discord_bridge", return_value=4321) as spawn:
+            result = runner.invoke(
+                app,
+                [
+                    "serve-discord",
+                    "--session-id",
+                    "session-1",
+                    "--channel-id",
+                    "12345",
+                    "--mcp-base-url",
+                    "http://127.0.0.1:9000",
+                    "--mcp-timeout-seconds",
+                    "180",
+                    "--token-env",
+                    "DISCORD_BOT_TOKEN",
+                    "--no-resume-if-inactive",
+                    "--command-prefix",
+                    "!nai",
+                    "--background",
+                ],
+            )
+
+    assert result.exit_code == 0, result.output
+    spawn.assert_called_once_with(
+        session_id="session-1",
+        channel_id=12345,
+        mcp_base_url="http://127.0.0.1:9000",
+        mcp_timeout_seconds=180.0,
+        token_env="DISCORD_BOT_TOKEN",
+        resume_if_inactive=False,
+        command_prefix="!nai",
+    )
+    assert "Discord bridge started in background (pid=4321)" in result.output
+
+
+def test_serve_discord_background_reports_startup_failure():
+    with patch.dict(os.environ, {"DISCORD_BOT_TOKEN": "token"}):
+        with patch("mmrpg_nai.cli.main._spawn_background_discord_bridge", side_effect=RuntimeError("failed to start")):
+            result = runner.invoke(app, ["serve-discord", "--channel-id", "12345", "--background"])
+
+    assert result.exit_code != 0
+    assert "failed to start" in result.output
+
+
+def test_serve_discord_foreground_does_not_spawn_background():
+    with patch.dict(os.environ, {"DISCORD_BOT_TOKEN": "token"}):
+        with patch("mmrpg_nai.cli.main._spawn_background_discord_bridge") as spawn:
+            with patch("mmrpg_nai.discord.bridge.run_discord_bridge"):
+                result = runner.invoke(app, ["serve-discord", "--channel-id", "12345", "--foreground"])
+
+    assert result.exit_code == 0, result.output
+    spawn.assert_not_called()

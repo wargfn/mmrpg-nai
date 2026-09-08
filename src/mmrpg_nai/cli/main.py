@@ -166,6 +166,59 @@ def _spawn_background_mcp_service(host: str, port: int, data_dir: str) -> int:
     raise RuntimeError(f"Background MCP service failed to start{detail}")
 
 
+def _spawn_background_discord_bridge(
+    *,
+    session_id: Optional[str],
+    channel_id: int,
+    mcp_base_url: str,
+    mcp_timeout_seconds: float,
+    token_env: str,
+    resume_if_inactive: bool,
+    command_prefix: str,
+) -> int:
+    cmd = [
+        sys.executable,
+        "-m",
+        "mmrpg_nai.cli.main",
+        "serve-discord",
+        "--channel-id",
+        str(channel_id),
+        "--mcp-base-url",
+        mcp_base_url,
+        "--mcp-timeout-seconds",
+        str(mcp_timeout_seconds),
+        "--token-env",
+        token_env,
+        "--foreground",
+    ]
+    if session_id:
+        cmd.extend(["--session-id", session_id])
+    if resume_if_inactive:
+        cmd.append("--resume-if-inactive")
+    else:
+        cmd.append("--no-resume-if-inactive")
+    if command_prefix:
+        cmd.extend(["--command-prefix", command_prefix])
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        proc.wait(timeout=0.75)
+    except subprocess.TimeoutExpired:
+        return int(proc.pid)
+    stderr = ""
+    if proc.stderr is not None:
+        stderr = proc.stderr.read().decode("utf-8", errors="replace").strip()
+    detail = f" (exit code {proc.returncode})"
+    if stderr:
+        detail += f": {stderr}"
+    raise RuntimeError(f"Background Discord bridge failed to start{detail}")
+
+
 def _select_users_for_session(store: Store, campaign: Campaign) -> list[User]:
     users = store.users.list_all()
     if not users:
@@ -1947,6 +2000,11 @@ def serve_discord(
         "",
         help="Optional command prefix to filter messages (e.g. !nai)",
     ),
+    background: bool = typer.Option(
+        False,
+        "--background/--foreground",
+        help="Run as a detached background process",
+    ),
 ) -> None:
     """Start Discord bridge process that relays channel messages to an MCP session."""
     from mmrpg_nai.discord.bridge import DiscordBridgeSettings, run_discord_bridge
@@ -1958,6 +2016,22 @@ def serve_discord(
 
     target = session_id or "(none; use /campaign new and /session start in Discord)"
     console.print(f"[dim]Starting Discord bridge on channel {channel_id} -> session {target} via {mcp_base_url}[/dim]")
+    if background:
+        try:
+            pid = _spawn_background_discord_bridge(
+                session_id=session_id,
+                channel_id=channel_id,
+                mcp_base_url=mcp_base_url,
+                mcp_timeout_seconds=mcp_timeout_seconds,
+                token_env=token_env,
+                resume_if_inactive=resume_if_inactive,
+                command_prefix=command_prefix,
+            )
+        except RuntimeError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[green]Discord bridge started in background (pid={pid})[/green]")
+        return
     run_discord_bridge(
         DiscordBridgeSettings(
             discord_token=token_value,
