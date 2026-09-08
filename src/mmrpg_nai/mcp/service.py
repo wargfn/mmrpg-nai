@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from mmrpg_nai.llm.narrator import Narrator
+from mmrpg_nai.llm.narrator import Narrator, narrate_d616_roll
 from mmrpg_nai.models.core import (
     Adventure,
     Campaign,
@@ -82,6 +82,11 @@ class WebChatResponse(BaseModel):
     response: str
     mode: str
     log: list[LogEntry]
+
+
+class WebRollResponse(BaseModel):
+    response: str
+    mode: str
 
 
 class WebBootstrapResponse(BaseModel):
@@ -396,6 +401,17 @@ def web_session_roll(session_id: str) -> WebChatResponse:
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
     return WebChatResponse(session_id=session_id, response=response, mode="roll", log=session.log)
+
+
+@app.post("/web/roll", response_model=WebRollResponse, tags=["web"])
+def web_roll() -> WebRollResponse:
+    store = get_store()
+    cfg = store.load_config()
+    try:
+        response = narrate_d616_roll(cfg)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return WebRollResponse(response=response, mode="roll")
 
 
 @app.post("/web/session/{session_id}/end", response_model=WebSessionEndResponse, tags=["web"])

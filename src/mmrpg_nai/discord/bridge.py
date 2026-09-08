@@ -81,6 +81,10 @@ class MCPWebClient:
         data = self._post(f"/web/session/{session_id}/roll", {})
         return str(data.get("response", "")), str(data.get("mode", "roll"))
 
+    def roll_any(self) -> tuple[str, str]:
+        data = self._post("/web/roll", {})
+        return str(data.get("response", "")), str(data.get("mode", "roll"))
+
     def resume(self, session_id: str) -> str:
         data = self._post("/web/session/start", {"session_id": session_id})
         session = data.get("session") or {}
@@ -356,18 +360,19 @@ def process_bridge_command(
     if cmd == "roll":
         if len(parts) != 1:
             return True, "Usage: /roll", active_session_id, last_campaign_id
-        if not active_session_id:
-            return True, "No active session. Use /campaign new <name> then /session start.", active_session_id, last_campaign_id
-        session_id = active_session_id
         try:
-            if resume_if_inactive:
-                session_id, _ = mcp.ensure_active_session(session_id, True)
-            response, _ = mcp.roll(session_id)
+            if active_session_id:
+                session_id = active_session_id
+                if resume_if_inactive:
+                    session_id, _ = mcp.ensure_active_session(session_id, True)
+                response, _ = mcp.roll(session_id)
+                return True, response, session_id, last_campaign_id
+            response, _ = mcp.roll_any()
         except MCPSessionInactiveError:
             return True, "Session is not active. Start/resume it in MCP first.", active_session_id, last_campaign_id
         except MCPBridgeError as exc:
             return True, str(exc), active_session_id, last_campaign_id
-        return True, response, session_id, last_campaign_id
+        return True, response, active_session_id, last_campaign_id
 
     if cmd == "channel":
         if len(parts) >= 2 and parts[1].lower() == "clear":

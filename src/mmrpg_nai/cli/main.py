@@ -24,6 +24,7 @@ from mmrpg_nai.adventure.importer import (
     export_template_schema,
     import_adventure,
 )
+from mmrpg_nai.llm.narrator import narrate_d616_roll
 from mmrpg_nai.models.core import (
     Campaign,
     CampaignSettings,
@@ -137,6 +138,32 @@ def _print_session_response(mode: str, output: str) -> None:
         return
     console.print("[bold blue]Narrator[/bold blue]")
     console.print(Panel(Markdown(output), border_style="blue"))
+
+
+def _roll_without_session(data_dir: str) -> None:
+    cfg = _get_store(data_dir).load_config()
+    try:
+        _print_session_response("roll", narrate_d616_roll(cfg))
+    except Exception as exc:
+        if isinstance(exc, EnvironmentError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Token not set[/bold red]", border_style="red"))
+        elif isinstance(exc, PermissionError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Authentication error[/bold red]", border_style="red"))
+        elif isinstance(exc, ConnectionError):
+            console.print(Panel(str(exc), title="[bold red]⚠ Connection error[/bold red]", border_style="red"))
+        elif isinstance(exc, RuntimeError):
+            console.print(Panel(str(exc), title="[bold red]⚠ API error[/bold red]", border_style="red"))
+        else:
+            console.print(f"[red]Error: {exc}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("roll")
+def roll(
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Roll D616 and ask the AI to narrate the result."""
+    _roll_without_session(data_dir)
 
 
 def _mcp_session_listed_active(base_url: str, session_id: str) -> bool:

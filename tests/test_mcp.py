@@ -287,6 +287,15 @@ def test_web_start_and_chat(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     assert len(touched_user_after_resume["session_timestamps"]) == 2
 
 
+def test_web_roll_without_session(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(service, "narrate_d616_roll", lambda cfg: "Rolled 11 — standard success.")
+
+    r = client.post("/web/roll")
+
+    assert r.status_code == 200
+    assert r.json() == {"response": "Rolled 11 — standard success.", "mode": "roll"}
+
+
 def test_web_multiple_sessions_isolated(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     class DummyNarrator:
         def __init__(self, cfg, store):

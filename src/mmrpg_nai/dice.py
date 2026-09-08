@@ -38,6 +38,19 @@ class D616Roll:
         )
 
 
+def build_d616_prompt(roll: D616Roll) -> str:
+    return (
+        "The player asked for a Marvel Multiverse RPG D616 roll. "
+        "Use this exact result and do not reroll or alter any numbers.\n\n"
+        f"{roll.summary_text}\n"
+        f"Dice shown: {roll.dice_text}.\n"
+        f"Outcome type: {roll.outcome_text}.\n\n"
+        "Respond as the Narrator in 1-3 concise sentences. "
+        "State the dice and total clearly. "
+        "If the result is fantastic or ultimate fantastic, say so explicitly and briefly describe the impact."
+    )
+
+
 def roll_d616(rng: random.Random | None = None) -> D616Roll:
     roller = rng if rng is not None else random
     marvel_raw = roller.randint(1, 6)

@@ -61,6 +61,14 @@ def test_mcp_client_roll_success():
     assert mode == "roll"
 
 
+def test_mcp_client_roll_any_success():
+    client = MCPWebClient("http://localhost:8000")
+    with patch("urllib.request.urlopen", return_value=_FakeHTTPResponse({"response": "rolled-any", "mode": "roll"})):
+        response, mode = client.roll_any()
+    assert response == "rolled-any"
+    assert mode == "roll"
+
+
 def test_mcp_client_chat_inactive_session_error():
     client = MCPWebClient("http://localhost:8000")
     err = HTTPError(
@@ -227,11 +235,19 @@ def test_process_bridge_command_malformed_quotes():
     assert campaign is None
 
 
-def test_process_bridge_command_roll_requires_active_session():
+def test_process_bridge_command_roll_without_active_session():
     client = MCPWebClient("http://localhost:8000")
-    handled, reply, active, campaign = process_bridge_command("/roll", client, None, None)
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/roll"):
+            return _FakeHTTPResponse({"response": "Rolled 9", "mode": "roll"})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/roll", client, None, None)
+
     assert handled is True
-    assert "No active session" in (reply or "")
+    assert reply == "Rolled 9"
     assert active is None
     assert campaign is None
 
