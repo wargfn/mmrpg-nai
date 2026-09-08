@@ -53,6 +53,14 @@ def test_mcp_client_chat_success():
     assert mode == "narrate"
 
 
+def test_mcp_client_roll_success():
+    client = MCPWebClient("http://localhost:8000")
+    with patch("urllib.request.urlopen", return_value=_FakeHTTPResponse({"response": "rolled", "mode": "roll"})):
+        response, mode = client.roll("sid")
+    assert response == "rolled"
+    assert mode == "roll"
+
+
 def test_mcp_client_chat_inactive_session_error():
     client = MCPWebClient("http://localhost:8000")
     err = HTTPError(
@@ -217,6 +225,36 @@ def test_process_bridge_command_malformed_quotes():
     assert "Malformed command syntax" in (reply or "")
     assert active is None
     assert campaign is None
+
+
+def test_process_bridge_command_roll_requires_active_session():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/roll", client, None, None)
+    assert handled is True
+    assert "No active session" in (reply or "")
+    assert active is None
+    assert campaign is None
+
+
+def test_process_bridge_command_roll_uses_active_session():
+    client = MCPWebClient("http://localhost:8000")
+
+    def _urlopen(req, timeout=15):
+        if req.full_url.endswith("/web/session/sess-1") and req.method == "GET":
+            return _FakeHTTPResponse({"is_active": True})
+        if req.full_url.endswith("/web/active-sessions"):
+            return _FakeHTTPResponse({"sessions": [{"id": "sess-1"}]})
+        if req.full_url.endswith("/web/session/sess-1/roll"):
+            return _FakeHTTPResponse({"response": "Rolled 10", "mode": "roll"})
+        raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+    with patch("urllib.request.urlopen", side_effect=_urlopen):
+        handled, reply, active, campaign = process_bridge_command("/roll", client, "sess-1", "camp-1")
+
+    assert handled is True
+    assert reply == "Rolled 10"
+    assert active == "sess-1"
+    assert campaign == "camp-1"
 
 
 def test_process_bridge_command_session_start_exact_id_without_campaign_lookup():
@@ -651,6 +689,15 @@ def test_process_bridge_command_prefixed_cli_style_campaign_list():
     assert handled is True
     assert "Campaigns:" in (reply or "")
     assert "Alpha" in (reply or "")
+
+
+def test_process_bridge_command_help_lists_roll():
+    client = MCPWebClient("http://localhost:8000")
+    handled, reply, active, campaign = process_bridge_command("/help", client, None, None)
+    assert handled is True
+    assert "• /roll" in (reply or "")
+    assert active is None
+    assert campaign is None
 
 
 def test_process_bridge_command_campaign_plan():

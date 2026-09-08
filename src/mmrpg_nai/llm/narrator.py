@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterator
 
+from mmrpg_nai.dice import roll_d616 as perform_d616_roll
 from mmrpg_nai.llm.client import LLMClient
 from mmrpg_nai.models.core import (
     Campaign,
@@ -227,6 +228,29 @@ class Narrator:
         if use_default_output:
             print()
         return "".join(chunks)
+
+    def roll_d616(self) -> str:
+        """Roll D616 and ask the narrator to interpret the exact result."""
+        roll = perform_d616_roll()
+        self._messages.append({"role": "system", "content": f"[D616 ROLL]: {roll.summary_text}"})
+        self._log(role="meta", content=roll.summary_text)
+
+        prompt = (
+            "The player asked for a Marvel Multiverse RPG D616 roll. "
+            "Use this exact result and do not reroll or alter any numbers.\n\n"
+            f"{roll.summary_text}\n"
+            f"Dice shown: {roll.dice_text}.\n"
+            f"Outcome type: {roll.outcome_text}.\n\n"
+            "Respond as the Narrator in 1-3 concise sentences. "
+            "State the dice and total clearly. "
+            "If the result is fantastic or ultimate fantastic, say so explicitly and briefly describe the impact."
+        )
+        response = self.llm.complete([*self._messages, {"role": "user", "content": prompt}], stream=False)
+        text = str(response)
+        self._messages.append({"role": "assistant", "content": text})
+        self._log(role="narrator", content=text)
+        self.store.append_log(self._session)
+        return text
 
     def recap_last_session(self, last_session: "Session") -> str:
         """Generate a brief AI recap of the previous session to open the current one."""

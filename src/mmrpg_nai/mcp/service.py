@@ -377,6 +377,27 @@ def web_session_chat(session_id: str, req: WebChatRequest) -> WebChatResponse:
     return WebChatResponse(session_id=session_id, response=response, mode=mode, log=session.log)
 
 
+@app.post("/web/session/{session_id}/roll", response_model=WebChatResponse, tags=["web"])
+def web_session_roll(session_id: str) -> WebChatResponse:
+    store = get_store()
+    lock = _get_session_lock(session_id)
+    with lock:
+        with _active_narrators_lock:
+            narrator = _active_narrators.get(session_id)
+        if narrator is None:
+            raise HTTPException(status_code=404, detail="Session is not active; start or resume it first")
+
+        try:
+            response = narrator.roll_d616()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        session = store.sessions.load(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+    return WebChatResponse(session_id=session_id, response=response, mode="roll", log=session.log)
+
+
 @app.post("/web/session/{session_id}/end", response_model=WebSessionEndResponse, tags=["web"])
 def web_session_end(session_id: str) -> WebSessionEndResponse:
     store = get_store()

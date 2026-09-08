@@ -77,6 +77,10 @@ class MCPWebClient:
         data = self._post(f"/web/session/{session_id}/chat", {"message": message})
         return str(data.get("response", "")), str(data.get("mode", "narrate"))
 
+    def roll(self, session_id: str) -> tuple[str, str]:
+        data = self._post(f"/web/session/{session_id}/roll", {})
+        return str(data.get("response", "")), str(data.get("mode", "roll"))
+
     def resume(self, session_id: str) -> str:
         data = self._post("/web/session/start", {"session_id": session_id})
         session = data.get("session") or {}
@@ -306,6 +310,7 @@ def process_bridge_command(
     mcp: MCPWebClient,
     active_session_id: str | None,
     last_campaign_id: str | None,
+    resume_if_inactive: bool = True,
 ) -> tuple[bool, str | None, str | None, str | None]:
     if not text.startswith("/"):
         return False, None, active_session_id, last_campaign_id
@@ -337,6 +342,7 @@ def process_bridge_command(
                 "• /session end\n"
                 "• /session quit\n"
                 "• /session status\n"
+                "• /roll\n"
                 "• /clear\n"
                 "• /channel clear"
             ),
@@ -346,6 +352,22 @@ def process_bridge_command(
 
     if cmd == "clear":
         return True, None, active_session_id, last_campaign_id
+
+    if cmd == "roll":
+        if len(parts) != 1:
+            return True, "Usage: /roll", active_session_id, last_campaign_id
+        if not active_session_id:
+            return True, "No active session. Use /campaign new <name> then /session start.", active_session_id, last_campaign_id
+        session_id = active_session_id
+        try:
+            if resume_if_inactive:
+                session_id, _ = mcp.ensure_active_session(session_id, True)
+            response, _ = mcp.roll(session_id)
+        except MCPSessionInactiveError:
+            return True, "Session is not active. Start/resume it in MCP first.", active_session_id, last_campaign_id
+        except MCPBridgeError as exc:
+            return True, str(exc), active_session_id, last_campaign_id
+        return True, response, session_id, last_campaign_id
 
     if cmd == "channel":
         if len(parts) >= 2 and parts[1].lower() == "clear":
@@ -791,6 +813,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                         mcp,
                         self.active_session_id,
                         self.last_campaign_id,
+                        settings.resume_if_inactive,
                     )
                 except Exception as exc:
                     await message.reply(f"Command error: {exc}")
@@ -799,6 +822,7 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                     normalized_words = _normalized_bridge_command_words(text)
                     is_clear_command = normalized_words == ["clear"]
                     is_channel_clear_command = normalized_words[:2] == ["channel", "clear"]
+                    is_roll_command = normalized_words == ["roll"]
                     needs_activation = (
                         normalized_words[:2] == ["session", "use"]
                         or normalized_words[:2] == ["session", "start"]
@@ -869,6 +893,8 @@ def run_discord_bridge(settings: DiscordBridgeSettings) -> None:
                             self._session_log_cursor.pop(previous_active, None)
                         if self.active_session_id and self.active_session_id != previous_active:
                             await self._sync_session_cursor(self.active_session_id, initialize=True)
+                    if is_roll_command and self.active_session_id:
+                        await self._sync_session_cursor(self.active_session_id, initialize=True)
                     if new_campaign_id:
                         self.last_campaign_id = new_campaign_id
                     if reply:
