@@ -240,18 +240,6 @@ class Narrator:
         self._log(role="narrator", content=text)
         self.store.append_log(self._session)
         return text
-
-
-def narrate_d616_roll(cfg: NarratorConfig) -> str:
-    """Roll D616 and narrate it without requiring session context."""
-    roll = perform_d616_roll()
-    llm = LLMClient(cfg.llm)
-    messages = [
-        {"role": "system", "content": cfg.system_prompt},
-        {"role": "user", "content": build_d616_prompt(roll)},
-    ]
-    return str(llm.complete(messages, stream=False))
-
     def recap_last_session(self, last_session: "Session") -> str:
         """Generate a brief AI recap of the previous session to open the current one."""
         if not last_session.log:
@@ -408,3 +396,14 @@ def narrate_d616_roll(cfg: NarratorConfig) -> str:
             content=content,
         )
         self._session.log.append(entry)
+
+
+def narrate_d616_roll(cfg: NarratorConfig) -> str:
+    """Roll D616 and narrate it without requiring session context."""
+    roll = perform_d616_roll()
+    llm = LLMClient(cfg.llm)
+    messages = [
+        {"role": "system", "content": cfg.system_prompt},
+        {"role": "user", "content": build_d616_prompt(roll)},
+    ]
+    return str(llm.complete(messages, stream=False))
