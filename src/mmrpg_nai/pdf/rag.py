@@ -214,13 +214,16 @@ def retrieve_relevant_chunks(
     categories: list[str] | None = None,
 ) -> list[RetrievedChunk]:
     query_tokens = _tokenise(query)
-    selected_categories = categories or []
+    selected_categories = [_normalise_tag(category) for category in (categories or []) if _normalise_tag(category)]
     scored: list[RetrievedChunk] = []
     for material in materials:
         index = _load_index(material)
         if not index:
             continue
         for chunk in index.get("chunks", []):
+            chunk_tags = {_normalise_tag(tag) for tag in chunk.get("tags", []) if _normalise_tag(tag)}
+            if selected_categories and not (set(selected_categories) & chunk_tags):
+                continue
             score = _score_chunk(query, query_tokens, chunk, selected_categories)
             if score <= 0:
                 continue
@@ -249,7 +252,7 @@ def format_retrieved_chunks(chunks: list[RetrievedChunk], *, max_chars: int) -> 
         location = ""
         if chunk.page_start is not None:
             location = f" (page {chunk.page_start})" if chunk.page_start == chunk.page_end else f" (pages {chunk.page_start}-{chunk.page_end})"
-        categories = f" [{' ,'.join(chunk.categories)}]" if chunk.categories else ""
+        categories = f" [{', '.join(chunk.categories)}]" if chunk.categories else ""
         text = chunk.text[:remaining].strip()
         if not text:
             continue

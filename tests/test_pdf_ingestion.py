@@ -68,6 +68,30 @@ def test_retrieve_relevant_chunks_prefers_matching_rules_text(tmp_path: Path, mo
     assert "melee defense" in chunks[0].text.lower()
 
 
+def test_retrieve_relevant_chunks_respects_category_filter(tmp_path: Path, monkeypatch):
+    store = Store(tmp_path)
+    pdf_path = tmp_path / "sourcebook.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    class _MixedDoc:
+        def __iter__(self):
+            return iter([
+                _FakePage("Melee attacks target the target's melee defense score."),
+                _FakePage("Equipment entries list armor, weapons, and gadgets."),
+            ])
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setitem(sys.modules, "fitz", SimpleNamespace(open=lambda _: _MixedDoc()))
+    material = ingest_pdf(pdf_path, "Source Book", ["rules", "equipment"], store)
+
+    chunks = retrieve_relevant_chunks([material], "What gadgets exist?", top_k=2, categories=["equipment"])
+
+    assert chunks
+    assert all("equipment" in chunk.tags for chunk in chunks)
+
+
 def test_load_source_text_empty_path_returns_empty():
     material = SourceMaterial(title="Rules", file_path="/fake.pdf", extracted_text_path="")
     assert load_source_text(material) == ""
