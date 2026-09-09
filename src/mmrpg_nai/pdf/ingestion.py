@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mmrpg_nai.models.core import SourceMaterial
+from mmrpg_nai.pdf.rag import build_source_index
 from mmrpg_nai.storage.store import Store
 
 
@@ -51,6 +52,14 @@ def ingest_pdf(
     text_path.write_text(full_text, encoding="utf-8")
     material.extracted_text_path = str(text_path)
     store.source_materials.save(material)
+    cfg = store.load_config()
+    material = build_source_index(
+        material,
+        store,
+        chunk_size=cfg.rules_rag_chunk_size,
+        overlap=cfg.rules_rag_chunk_overlap,
+        pages=pages,
+    )
     return material
 
 
