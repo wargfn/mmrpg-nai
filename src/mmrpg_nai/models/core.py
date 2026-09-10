@@ -236,6 +236,8 @@ class SourceMaterial(BaseModel):
     categories: list[str] = Field(default_factory=list)
     page_count: int = 0
     extracted_text_path: str = ""
+    rag_index_path: str = ""
+    rag_chunk_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -406,3 +408,8 @@ class NarratorConfig(BaseModel):
     # Max total characters of PDF source material text injected per session.
     # Set to 0 to disable injection.
     max_source_chars: int = 20_000
+    rules_rag_enabled: bool = True
+    rules_rag_top_k: int = 5
+    rules_rag_chunk_size: int = 1_200
+    rules_rag_chunk_overlap: int = 150
+    rules_rag_max_chars: int = 6_000

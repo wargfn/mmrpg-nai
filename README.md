@@ -20,7 +20,7 @@ It supports **Google AI Studio**, **OpenAI**, **xAI Grok**, **GitHub Copilot**, 
 | **Equipment Store** | Catalogue weapons, armour, gadgets and vehicles |
 | **Power Sets** | Manage Marvel Multiverse power sets with individual powers |
 | **Adventure Templates** | Import/export adventures from a standard JSON template |
-| **PDF Source Materials** | Ingest rulebooks, bestiaries, and supplements as AI context — injected automatically each session |
+| **PDF Source Materials** | Ingest rulebooks, bestiaries, and supplements into a local tagged RAG index for rules, lore, equipment, powers, and stat references |
 | **MCP REST Service** | FastAPI service exposing all data to other tools |
 | **Web Front End** | Browser UI for browsing campaigns/sessions and running chat sessions |
 | **Settings & Prompts** | Configure LLM settings, system prompts, and extra named prompts |
@@ -76,7 +76,7 @@ When `llm.api_key_env` is one of the managed provider env vars, top-level `llm.m
 # 1. Create a campaign
 mmrpg-nai campaign create
 
-# 2. (Optional) Ingest a rulebook PDF and link it to your campaign
+# 2. (Optional) Ingest a rulebook PDF, build its local index, and link it to your campaign
 mmrpg-nai pdf ingest "MMRPG_Core_Rulebook.pdf" --title "Core Rulebook" --categories "rules,combat"
 mmrpg-nai pdf list                                    # copy the source material ID
 mmrpg-nai campaign add-source <campaign-id> <source-id>
@@ -138,7 +138,8 @@ mmrpg-nai config set llm.provider_settings.google_ai_studio.model gemini-2.5-fla
 mmrpg-nai config set llm.provider_settings.grok.model grok-4
 
 # Narrator settings
-mmrpg-nai config set max_source_chars 40000   # max PDF text injected per session (0 = disabled)
+mmrpg-nai config set rules_rag_enabled false  # fall back to legacy full-text injection
+mmrpg-nai config set max_source_chars 40000   # max legacy PDF text injected into the system prompt per session (0 = disabled)
 ```
 
 #### `config system-prompt`
@@ -392,6 +393,7 @@ or `unnamed` to create a placeholder player character for the session.
 
 #### `session query <question>`
 Ask the configured LLM a rules/stats/checks question using loaded campaign/session context.
+When rules RAG is enabled, retrieved source excerpts are treated as the primary mechanics reference.
 You must provide either `--campaign-id` or `--session-id`.
 ```bash
 mmrpg-nai session query "How do melee checks work?" --campaign-id <campaign-id>
@@ -656,7 +658,7 @@ Valid `recommended_rank` values: `basic`, `rookie`, `veteran`, `champion`, `mast
 ### `mmrpg-nai pdf` — PDF source materials
 
 #### `pdf ingest <file>`
-Extract text from a PDF and register it as a source material for AI context.
+Extract text from a PDF, register it as a source material, and build its local retrieval index.
 ```bash
 mmrpg-nai pdf ingest mmrpg_core_rulebook.pdf \
   --title "MMRPG Core Rulebook" \
@@ -673,9 +675,23 @@ Options:
 | `--description` | `` | Short description |
 
 #### `pdf list`
-List all registered source materials.
+List all registered source materials, including whether each one is indexed and how many chunks it contains.
 ```bash
 mmrpg-nai pdf list
+```
+
+#### `pdf reindex [source-id]`
+Rebuild the local retrieval index for one source material or for all source materials.
+```bash
+mmrpg-nai pdf reindex
+mmrpg-nai pdf reindex <source-id>
+```
+
+#### `pdf search <query>`
+Search the local retrieval index and print the most relevant excerpts.
+```bash
+mmrpg-nai pdf search "How does melee defense work?"
+mmrpg-nai pdf search "What gadgets affect initiative?" --category equipment --top-k 3
 ```
 
 ---
@@ -852,14 +868,20 @@ mmrpg-nai config set llm.max_tokens 4096
 | `llm.max_tokens` | `4096` | Maximum tokens in each LLM response |
 | `system_prompt` | *(built-in)* | Main narrator system prompt (replace with `config system-prompt`) |
 | `max_source_chars` | `20000` | Max characters of PDF source material injected per session; set to `0` to disable |
+| `rules_rag_enabled` | `true` | Use indexed source excerpts as the primary rules/mechanics context |
+| `rules_rag_top_k` | `5` | Number of indexed excerpts retrieved per request |
+| `rules_rag_chunk_size` | `1200` | Chunk size used when building the local retrieval index |
+| `rules_rag_chunk_overlap` | `150` | Overlap between indexed chunks |
+| `rules_rag_max_chars` | `6000` | Max retrieved excerpt text passed to the LLM per request |
 | `extra_prompts` | `{}` | Named extra prompt sections appended to every system prompt |
 
-### Source material injection
+### Source material retrieval
 
-When you link PDFs to a campaign, their extracted text is automatically injected into the
-Narrator's system prompt at the start of every session under a `## Rules & Source Materials`
-section.  This gives the AI access to rulebook text, enemy stat-blocks, and lore without
-manual copy-pasting.
+When you link PDFs to a campaign, MMRPG-NAI builds a local tagged index and retrieves the
+most relevant excerpts for each narration turn, rules query, and D616 adjudication request.
+Those retrieved excerpts are treated as the primary mechanics authority. If retrieval finds
+no relevant excerpts, the app safely falls back to the legacy full-text source-material
+injection behavior.
 
 ```bash
 # 1. Ingest a PDF (one-time)
@@ -871,11 +893,13 @@ mmrpg-nai pdf ingest "MMRPG Core Rulebook.pdf" \
 mmrpg-nai pdf list
 mmrpg-nai campaign add-source <campaign-id> <source-material-id>
 
-# 3. Control how much text is injected (default 20 000 chars ≈ 10-15 rulebook pages)
-mmrpg-nai config set max_source_chars 40000
+# 3. Search indexed rules excerpts directly
+mmrpg-nai pdf search "How do melee attacks target defense?"
 
-# 4. Disable injection entirely
-mmrpg-nai config set max_source_chars 0
+# 4. Tune retrieval or fall back to legacy injection
+mmrpg-nai config set rules_rag_top_k 8
+mmrpg-nai config set rules_rag_enabled false
+mmrpg-nai config set max_source_chars 40000
 ```
 
 The startup panel shows which source materials are loaded for each session:

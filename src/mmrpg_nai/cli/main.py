@@ -38,6 +38,12 @@ from mmrpg_nai.models.core import (
     User,
 )
 from mmrpg_nai.pdf.ingestion import ingest_pdf
+from mmrpg_nai.pdf.rag import (
+    build_source_index,
+    ensure_source_index,
+    format_retrieved_chunks,
+    retrieve_relevant_chunks,
+)
 from mmrpg_nai.storage.store import Store
 
 app = typer.Typer(
@@ -1945,12 +1951,13 @@ def pdf_ingest(
     description: str = typer.Option("", help="Short description"),
     data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
 ) -> None:
-    """Ingest a PDF as source material (extracts text for AI context)."""
+    """Ingest a PDF as source material and build its local retrieval index."""
     store = _get_store(data_dir)
     cats = [c.strip() for c in categories.split(",") if c.strip()]
     material = ingest_pdf(file, title, cats, store, description)
     console.print(
-        f"[green]Ingested '{material.title}' ({material.page_count} pages) → {material.extracted_text_path}[/green]"
+        f"[green]Ingested '{material.title}' ({material.page_count} pages) → {material.extracted_text_path}[/green]\n"
+        f"[green]Indexed {material.rag_chunk_count} chunks → {material.rag_index_path}[/green]"
     )
 
 
@@ -1962,12 +1969,83 @@ def pdf_list(data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DAT
     if not materials:
         console.print("[yellow]No source materials found.[/yellow]")
         return
-    table = Table("ID", "Title", "Pages", "Chars", "Categories")
+    table = Table("ID", "Title", "Pages", "Chars", "Indexed", "Chunks", "Categories")
     for m in materials:
         txt = Path(m.extracted_text_path)
         char_count = f"{txt.stat().st_size:,}" if m.extracted_text_path and txt.exists() else "—"
-        table.add_row(m.id[:8], m.title, str(m.page_count), char_count, ", ".join(m.categories))
+        table.add_row(
+            m.id[:8],
+            m.title,
+            str(m.page_count),
+            char_count,
+            "✓" if m.rag_index_path and Path(m.rag_index_path).exists() else "",
+            str(m.rag_chunk_count or 0),
+            ", ".join(m.categories),
+        )
     console.print(table)
+
+
+@pdf_app.command("reindex")
+def pdf_reindex(
+    source_id: Optional[str] = typer.Argument(None, help="Optional source material ID or prefix"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Rebuild the local retrieval index for one or all source materials."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    materials = (
+        [_load_by_prefix_or_exact(store.source_materials, source_id, "Source material")]
+        if source_id
+        else store.source_materials.list_all()
+    )
+    count = 0
+    for material in materials:
+        indexed = build_source_index(
+            material,
+            store,
+            chunk_size=cfg.rules_rag_chunk_size,
+            overlap=cfg.rules_rag_chunk_overlap,
+        )
+        count += 1
+        console.print(
+            f"[green]Indexed {indexed.title} ({indexed.rag_chunk_count} chunks) → {indexed.rag_index_path}[/green]"
+        )
+    if count == 0:
+        console.print("[yellow]No source materials found.[/yellow]")
+
+
+@pdf_app.command("search")
+def pdf_search(
+    query: str = typer.Argument(..., help="Search the local retrieval index"),
+    source_id: Optional[str] = typer.Option(None, help="Optional source material ID or prefix"),
+    category: str = typer.Option("", help="Optional category filter"),
+    top_k: int = typer.Option(5, min=1, help="Maximum number of excerpts to return"),
+    data_dir: str = typer.Option(_default_data_dir(), envvar="MMRPG_DATA_DIR"),
+) -> None:
+    """Search indexed source-material excerpts."""
+    store = _get_store(data_dir)
+    cfg = store.load_config()
+    materials = (
+        [_load_by_prefix_or_exact(store.source_materials, source_id, "Source material")]
+        if source_id
+        else store.source_materials.list_all()
+    )
+    indexed_materials = [
+        ensure_source_index(
+            material,
+            store,
+            chunk_size=cfg.rules_rag_chunk_size,
+            overlap=cfg.rules_rag_chunk_overlap,
+        )
+        for material in materials
+    ]
+    categories = [part.strip() for part in category.split(",") if part.strip()]
+    chunks = retrieve_relevant_chunks(indexed_materials, query, top_k=top_k, categories=categories)
+    if not chunks:
+        console.print("[yellow]No matching indexed excerpts found.[/yellow]")
+        return
+    output = format_retrieved_chunks(chunks, max_chars=cfg.rules_rag_max_chars)
+    console.print(Panel(Markdown(output), title="[bold cyan]Source Search[/bold cyan]"))
 
 
 # ---------------------------------------------------------------------------

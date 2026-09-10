@@ -15,6 +15,11 @@ from mmrpg_nai.models.core import (
     Session,
     SourceMaterial,
 )
+from mmrpg_nai.pdf.rag import (
+    ensure_source_index,
+    format_retrieved_chunks,
+    retrieve_relevant_chunks,
+)
 from mmrpg_nai.storage.store import Store
 
 
@@ -87,21 +92,9 @@ class Narrator:
         for key, prompt in self.cfg.extra_prompts.items():
             parts.append(f"\n## {key}\n{prompt}")
 
-        # Source material injection
-        if self.cfg.max_source_chars > 0 and getattr(self, "_source_materials", None):
-            from mmrpg_nai.pdf.ingestion import load_source_text
-
-            remaining = self.cfg.max_source_chars
-            source_parts: list[str] = []
-            for mat in self._source_materials:
-                if remaining <= 0:
-                    break
-                text = load_source_text(mat, max_chars=remaining)
-                if text:
-                    source_parts.append(f"### {mat.title}\n{text}")
-                    remaining -= len(text)
-            if source_parts:
-                parts.append("\n## Rules & Source Materials\n" + "\n\n".join(source_parts))
+        source_section = self._build_source_material_section()
+        if source_section:
+            parts.append(source_section)
 
         system_content = "\n".join(parts)
         messages: list[dict] = [{"role": "system", "content": system_content}]
@@ -143,7 +136,10 @@ class Narrator:
         self._messages.append({"role": "user", "content": player_input})
         self._log(role="player", content=player_input)
 
-        result = self.llm.complete(self._messages, stream=stream)
+        result = self.llm.complete(
+            self._messages_with_rules_context(player_input, pending_message=self._messages[-1]),
+            stream=stream,
+        )
 
         if isinstance(result, str):
             response = result
@@ -179,7 +175,10 @@ class Narrator:
         self._messages.append({"role": "system", "content": system_note})
         self._log(role="meta", content=direction)
 
-        result = self.llm.complete(self._messages, stream=stream)
+        result = self.llm.complete(
+            self._messages_with_rules_context(direction, pending_message=self._messages[-1]),
+            stream=stream,
+        )
 
         if isinstance(result, str):
             response = result
@@ -206,11 +205,13 @@ class Narrator:
         """Query the model about rules, stats, and checks using current session context."""
         query_prompt = (
             "Answer this MMRPG rules/stats/checks question using the provided campaign, character, "
-            "session, and source-material context. If information is missing, say what is missing "
-            "instead of inventing it.\n\n"
+            "session, and source-material context. Use retrieved rules excerpts as the primary "
+            "authority for mechanics and adjudication when they are provided. If information is "
+            "missing, say what is missing instead of inventing it.\n\n"
             f"Question: {question}"
         )
-        messages = [*self._messages, {"role": "user", "content": query_prompt}]
+        messages = self._messages_with_rules_context(question)
+        messages.append({"role": "user", "content": query_prompt})
         result = self.llm.complete(messages, stream=stream)
 
         if isinstance(result, str):
@@ -234,12 +235,97 @@ class Narrator:
         roll = perform_d616_roll()
         self._messages.append({"role": "system", "content": f"[D616 ROLL]: {roll.summary_text}"})
         self._log(role="meta", content=roll.summary_text)
-        response = self.llm.complete([*self._messages, {"role": "user", "content": build_d616_prompt(roll)}], stream=False)
+        prompt = build_d616_prompt(roll)
+        messages = self._messages_with_rules_context(
+            f"{roll.summary_text}\n{prompt}",
+            pending_message=self._messages[-1],
+        )
+        messages.append({"role": "user", "content": prompt})
+        response = self.llm.complete(messages, stream=False)
         text = str(response)
         self._messages.append({"role": "assistant", "content": text})
         self._log(role="narrator", content=text)
         self.store.append_log(self._session)
         return text
+
+    def _build_source_material_section(self) -> str:
+        if not getattr(self, "_source_materials", None):
+            return ""
+        if self.cfg.rules_rag_enabled:
+            rows = []
+            for mat in self._source_materials:
+                cats = f" [{', '.join(mat.categories)}]" if mat.categories else ""
+                rows.append(f"- {mat.title}{cats}")
+            details = "\n".join(rows)
+            return (
+                "\n## Rules Retrieval\n"
+                "Use retrieved source excerpts as the primary authority for game mechanics and rules adjudication. "
+                "If retrieved excerpts do not answer a mechanics question, say what is missing instead of inventing rules.\n"
+                "\n## Source Material Catalog\n"
+                f"{details}"
+            )
+        return self._build_legacy_source_material_section()
+
+    def _build_legacy_source_material_section(self) -> str:
+        if self.cfg.max_source_chars <= 0 or not getattr(self, "_source_materials", None):
+            return ""
+        from mmrpg_nai.pdf.ingestion import load_source_text
+
+        remaining = self.cfg.max_source_chars
+        source_parts: list[str] = []
+        for mat in self._source_materials:
+            if remaining <= 0:
+                break
+            text = load_source_text(mat, max_chars=remaining)
+            if text:
+                source_parts.append(f"### {mat.title}\n{text}")
+                remaining -= len(text)
+        if not source_parts:
+            return ""
+        return "\n## Rules & Source Materials\n" + "\n\n".join(source_parts)
+
+    def _messages_with_rules_context(self, query: str, pending_message: dict | None = None) -> list[dict]:
+        if not self.cfg.rules_rag_enabled or not getattr(self, "_source_materials", None):
+            if pending_message is None:
+                return list(self._messages)
+            return [*self._messages[:-1], pending_message]
+        base_messages = list(self._messages if pending_message is None else self._messages[:-1])
+        indexed_materials = [
+            ensure_source_index(
+                mat,
+                self.store,
+                chunk_size=self.cfg.rules_rag_chunk_size,
+                overlap=self.cfg.rules_rag_chunk_overlap,
+            )
+            for mat in self._source_materials
+        ]
+        chunks = retrieve_relevant_chunks(
+            indexed_materials,
+            query,
+            top_k=self.cfg.rules_rag_top_k,
+        )
+        context = format_retrieved_chunks(chunks, max_chars=self.cfg.rules_rag_max_chars)
+        if context:
+            rules_message = {
+                "role": "system",
+                "content": (
+                    "## Retrieved Rules Excerpts\n"
+                    "Use these excerpts as the primary authority for Marvel Multiverse RPG mechanics and adjudication.\n\n"
+                    f"{context}"
+                ),
+            }
+            if pending_message is None:
+                return [*base_messages, rules_message]
+            return [*base_messages, rules_message, pending_message]
+        fallback = self._build_legacy_source_material_section()
+        if fallback:
+            fallback_message = {"role": "system", "content": fallback}
+            if pending_message is None:
+                return [*base_messages, fallback_message]
+            return [*base_messages, fallback_message, pending_message]
+        if pending_message is None:
+            return base_messages
+        return [*base_messages, pending_message]
     def recap_last_session(self, last_session: "Session") -> str:
         """Generate a brief AI recap of the previous session to open the current one."""
         if not last_session.log:

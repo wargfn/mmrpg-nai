@@ -1,4 +1,4 @@
-"""Tests for meta-direction and last-session recap in the Narrator engine."""
+"""Tests for meta-direction, rules retrieval, and last-session recap in the Narrator engine."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from mmrpg_nai.models.core import (
     LogEntry,
     NarratorConfig,
     Session,
+    SourceMaterial,
 )
 from mmrpg_nai.storage.store import Store
 
@@ -140,10 +141,7 @@ def test_recap_last_session_empty_returns_empty_string(cfg, store, campaign, cha
 # ---------------------------------------------------------------------------
 
 def test_source_material_injected_into_system_prompt(cfg, store, session, campaign, character, tmp_path):
-    """Source material text should appear under ## Rules & Source Materials."""
-    from mmrpg_nai.models.core import SourceMaterial
-
-    # Write a fake extracted text file
+    """RAG-enabled sessions should advertise retrieved rules and their source catalog."""
     txt = tmp_path / "rulebook.txt"
     txt.write_text("Roll 2d6 for every action.", encoding="utf-8")
 
@@ -151,6 +149,13 @@ def test_source_material_injected_into_system_prompt(cfg, store, session, campai
         title="Core Rulebook",
         file_path="/fake/rulebook.pdf",
         extracted_text_path=str(txt),
+        rag_index_path=str(tmp_path / "rulebook.rag.json"),
+        rag_chunk_count=1,
+        categories=["rules"],
+    )
+    Path(mat.rag_index_path).write_text(
+        '{"source_material_id":"x","title":"Core Rulebook","categories":["rules"],"chunk_size":1200,"chunk_overlap":150,"chunks":[{"id":"x-1","text":"Roll 2d6 for every action.","page_start":1,"page_end":1,"tags":["rules"]}]}',
+        encoding="utf-8",
     )
     store.source_materials.save(mat)
     campaign.source_material_ids = [mat.id]
@@ -163,23 +168,22 @@ def test_source_material_injected_into_system_prompt(cfg, store, session, campai
     narrator.llm.complete.return_value = "LLM response"
     narrator._messages = []
     narrator.start_session(session, campaign, [character], source_materials=[mat])
-
     system_content = narrator._messages[0]["content"]
-    assert "Rules & Source Materials" in system_content
-    assert "Roll 2d6" in system_content
+    system_content = narrator._messages[0]["content"]
+    assert "Rules Retrieval" in system_content
+    assert "Source Material Catalog" in system_content
+    assert "Core Rulebook" in system_content
 
 
 def test_no_source_materials_skips_section(cfg, store, session, campaign, character):
     """When no source materials are passed, the section must not appear."""
     narrator = _make_narrator(cfg, store, session, campaign, [character])
     system_content = narrator._messages[0]["content"]
-    assert "Rules & Source Materials" not in system_content
+    assert "Rules Retrieval" not in system_content
 
 
 def test_max_source_chars_zero_disables_injection(cfg, store, session, campaign, character, tmp_path):
-    """Setting max_source_chars=0 should suppress injection even if materials exist."""
-    from mmrpg_nai.models.core import NarratorConfig, SourceMaterial
-
+    """Setting max_source_chars=0 should suppress legacy fallback injection."""
     txt = tmp_path / "rules.txt"
     txt.write_text("Many rules here.", encoding="utf-8")
     mat = SourceMaterial(
@@ -189,7 +193,7 @@ def test_max_source_chars_zero_disables_injection(cfg, store, session, campaign,
     )
     store.source_materials.save(mat)
 
-    cfg_no_inject = NarratorConfig(max_source_chars=0)
+    cfg_no_inject = NarratorConfig(max_source_chars=0, rules_rag_enabled=False)
     narrator = Narrator.__new__(Narrator)
     narrator.cfg = cfg_no_inject
     narrator.store = store
@@ -203,8 +207,6 @@ def test_max_source_chars_zero_disables_injection(cfg, store, session, campaign,
 
 def test_max_source_chars_truncates_text(cfg, store, session, campaign, character, tmp_path):
     """Text beyond max_source_chars should be truncated."""
-    from mmrpg_nai.models.core import NarratorConfig, SourceMaterial
-
     long_text = "X" * 5000
     txt = tmp_path / "big.txt"
     txt.write_text(long_text, encoding="utf-8")
@@ -215,7 +217,7 @@ def test_max_source_chars_truncates_text(cfg, store, session, campaign, characte
     )
     store.source_materials.save(mat)
 
-    cfg_small = NarratorConfig(max_source_chars=100)
+    cfg_small = NarratorConfig(max_source_chars=100, rules_rag_enabled=False)
     narrator = Narrator.__new__(Narrator)
     narrator.cfg = cfg_small
     narrator.store = store
@@ -228,6 +230,69 @@ def test_max_source_chars_truncates_text(cfg, store, session, campaign, characte
     # Only 100 chars of the 5000-char text should be injected
     injected = system_content.split("### Big Book\n", 1)[1]
     assert len(injected) <= 100
+
+
+def test_query_rules_injects_retrieved_rules_excerpt(cfg, store, session, campaign, character, tmp_path):
+    txt = tmp_path / "rulebook.txt"
+    txt.write_text("Melee attacks target melee defense.", encoding="utf-8")
+    index_path = tmp_path / "rulebook.rag.json"
+    index_path.write_text(
+        '{"source_material_id":"x","title":"Core Rulebook","categories":["rules"],"chunk_size":1200,"chunk_overlap":150,"chunks":[{"id":"x-1","text":"Melee attacks target melee defense.","page_start":12,"page_end":12,"tags":["rules"]}]}',
+        encoding="utf-8",
+    )
+    mat = SourceMaterial(
+        title="Core Rulebook",
+        file_path="/fake/rulebook.pdf",
+        extracted_text_path=str(txt),
+        rag_index_path=str(index_path),
+        rag_chunk_count=1,
+        categories=["rules"],
+    )
+    narrator = Narrator.__new__(Narrator)
+    narrator.cfg = cfg
+    narrator.store = store
+    narrator.llm = MagicMock()
+    narrator.llm.complete.return_value = "LLM response"
+    narrator._messages = []
+    narrator.start_session(session, campaign, [character], source_materials=[mat])
+
+    narrator.query_rules("How does melee defense work?")
+
+    messages = narrator.llm.complete.call_args[0][0]
+    retrieved_message = next(m for m in messages if "Retrieved Rules Excerpts" in m["content"])
+    assert "Melee attacks target melee defense." in retrieved_message["content"]
+
+
+def test_narrate_falls_back_to_legacy_source_text_when_rag_has_no_hits(store, session, campaign, character, tmp_path):
+    cfg = NarratorConfig(rules_rag_enabled=True, max_source_chars=100)
+    txt = tmp_path / "rulebook.txt"
+    txt.write_text("Focus checks use ego against the target number.", encoding="utf-8")
+    empty_index = tmp_path / "empty.rag.json"
+    empty_index.write_text(
+        '{"source_material_id":"x","title":"Core Rulebook","categories":["rules"],"chunk_size":1200,"chunk_overlap":150,"chunks":[]}',
+        encoding="utf-8",
+    )
+    mat = SourceMaterial(
+        title="Core Rulebook",
+        file_path="/fake/rulebook.pdf",
+        extracted_text_path=str(txt),
+        rag_index_path=str(empty_index),
+        rag_chunk_count=0,
+        categories=["rules"],
+    )
+    narrator = Narrator.__new__(Narrator)
+    narrator.cfg = cfg
+    narrator.store = store
+    narrator.llm = MagicMock()
+    narrator.llm.complete.return_value = "LLM response"
+    narrator._messages = []
+    narrator.start_session(session, campaign, [character], source_materials=[mat])
+
+    narrator.narrate("I make a focus check.", stream=False)
+
+    messages = narrator.llm.complete.call_args[0][0]
+    fallback_message = next(m for m in messages if "Rules & Source Materials" in m["content"])
+    assert "Focus checks use ego" in fallback_message["content"]
 
 
 # ---------------------------------------------------------------------------
