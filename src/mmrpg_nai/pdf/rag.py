@@ -104,7 +104,7 @@ def _build_chunk_records(
     overlap: int,
 ) -> list[dict]:
     records: list[dict] = []
-    base_tags = [_normalise_tag(cat) for cat in material.categories if _normalise_tag(cat)]
+base_tags = list(filter(None, (_normalise_tag(cat) for cat in material.categories)))
     title_tags = _tokenise(material.title)
     if pages:
         for page_number, page_text in enumerate(pages, start=1):
