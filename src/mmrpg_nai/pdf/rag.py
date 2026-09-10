@@ -196,9 +196,9 @@ def _score_chunk(query: str, query_tokens: list[str], chunk: dict, categories: l
     if not text.strip():
         return 0.0
     text_lower = text.lower()
-    text_tokens = set(_tokenise(text))
-    chunk_tags = {_normalise_tag(tag) for tag in chunk.get("tags", []) if _normalise_tag(tag)}
-    query_tags = set(_infer_domain_tags(query)) | {_normalise_tag(cat) for cat in categories if _normalise_tag(cat)}
+text_tokens = set(_tokenise(text))
+chunk_tags = {t for t in (_normalise_tag(tag) for tag in chunk.get("tags", [])) if t}
+query_tags = set(_infer_domain_tags(query)) | {t for t in (_normalise_tag(cat) for cat in categories) if t}
     token_hits = sum(1 for token in query_tokens if token in text_tokens)
     exact_bonus = 4.0 if query.strip() and query.strip().lower() in text_lower else 0.0
     tag_bonus = 3.0 * len(query_tags & chunk_tags)
