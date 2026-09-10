@@ -139,7 +139,7 @@ mmrpg-nai config set llm.provider_settings.grok.model grok-4
 
 # Narrator settings
 mmrpg-nai config set rules_rag_enabled false  # fall back to legacy full-text injection
-mmrpg-nai config set max_source_chars 40000   # max fallback text injected per request
+mmrpg-nai config set max_source_chars 40000   # max legacy PDF text injected into the system prompt per session (0 = disabled)
 ```
 
 #### `config system-prompt`
